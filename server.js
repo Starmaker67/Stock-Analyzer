@@ -101,16 +101,31 @@ const getTechRadar = (s) => cached(`tr:${s}`, 60000, async () => {
 });
 
 const parser = new Parser();
+// Найдите этот блок и замените ссылку внутри parseURL
 const getNews = () => cached('news', 600000, async () => {
   try {
-    const feed = await parser.parseURL('https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114');
+    // Более стабильная лента новостей CNBC
+    const feed = await parser.parseURL('https://www.cnbc.com/id/100003114/device/rss/rss.html');
     return feed.items.slice(0, 6).map(item => {
-      let image = null; if (item.enclosure?.url) image = item.enclosure.url; else if (item.content) { const m = item.content.match(/<img[^>]+src="([^">]+)"/); if (m) image = m[1]; }
-      return { headline: item.title, source: 'CNBC', url: item.link, datetime: Math.floor(new Date(item.pubDate).getTime() / 1000), image };
+      let image = null; 
+      if (item.enclosure?.url) image = item.enclosure.url; 
+      else if (item.content) { 
+        const m = item.content.match(/<img[^>]+src="([^">]+)"/); 
+        if (m) image = m[1]; 
+      }
+      return { 
+        headline: item.title, 
+        source: 'CNBC', 
+        url: item.link, 
+        datetime: item.pubDate ? Math.floor(new Date(item.pubDate).getTime() / 1000) : Math.floor(Date.now() / 1000), 
+        image 
+      };
     });
-  } catch (e) { return []; }
+  } catch (e) { 
+    console.error('News error:', e.message);
+    return []; 
+  }
 });
-
 const getHeatmap = () => cached('heatmap', 60000, async () => {
   const promises = WATCHLIST.slice(0, 30).map(async (s) => {
     try { const q = await getQuote(s); const f = await getFundamentals(s); if (q.price && q.percent !== null) return { symbol: s, percent: q.percent, marketCap: f.marketCap || 100000 }; } catch(e) { return null; }

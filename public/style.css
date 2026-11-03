@@ -25,13 +25,23 @@ button { cursor: pointer; font-family: inherit; }
 
 .dashboard-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 32px; }
 .stock-card, .news-panel, .analysis-card, .heatmap-panel, .balance-card, .chart-wrapper { background: var(--panel); border-radius: 10px; border: 1px solid var(--border); padding: 20px; }
+
+.stock-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+.ticker-name { font-size: 32px; font-weight: 700; color: #fff; line-height: 1.1; }
+.company-name { color: #8b949e; font-size: 16px; }
+.header-right { text-align: right; }
+.price { font-size: 42px; font-weight: 700; color: #fff; line-height: 1; }
+.change { font-size: 18px; font-weight: 600; margin-top: 6px; }
+.up { color: var(--up) !important; } 
+.down { color: var(--down) !important; }
+
 .fair-value-box { background: rgba(88, 166, 255, 0.1); border-left: 4px solid var(--accent); padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; display: none; }
 .fair-value-box.under { border-color: var(--up); background: rgba(35,134,54,0.1); }
 .fair-value-box.over { border-color: var(--down); background: rgba(218,54,51,0.1); }
 
 .chart-container { height: 380px; }
 .chart-controls { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
-.btn-small { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 13px; font-weight: 600; }
+.btn-small { padding: 8px 14px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 13px; font-weight: 600; }
 .btn-buy { border-color: var(--up); color: var(--up); } .btn-buy:hover { background: var(--up); color: #fff; }
 .btn-sell { border-color: var(--down); color: var(--down); } .btn-sell:hover { background: var(--down); color: #fff; }
 .btn-star { color: #8b949e; } .btn-star.active { color: #e3b341; }
@@ -50,23 +60,33 @@ button { cursor: pointer; font-family: inherit; }
 .watchlist-item:hover { border-color: #a371f7; transform: translateY(-4px); box-shadow: 0 0 15px rgba(163, 113, 247, 0.5), 0 0 30px rgba(88, 166, 255, 0.3); }
 .watchlist-item.hidden { display: none; }
 .wl-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
-.wl-symbol { font-weight: 700; font-size: 18px; }
+.wl-symbol { font-weight: 700; font-size: 18px; color: #fff; }
 .wl-company { font-size: 12px; color: #8b949e; }
-.wl-price { font-size: 18px; font-weight: 700; text-align: right; }
+.wl-price { font-size: 18px; font-weight: 700; text-align: right; color: #fff; }
+.wl-change { font-size: 13px; font-weight: 600; text-align: right; margin-top: 2px; }
 .wl-chart { height: 120px; margin-top: 10px; }
 
+/* Кнопка Показать Еще */
+.show-more-container { text-align: center; margin-top: 40px; }
+.show-more-btn { padding: 12px 30px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: 0.3s; box-shadow: 0 4px 10px rgba(88, 166, 255, 0.3); }
+.show-more-btn:hover { background: #3182ce; transform: translateY(-2px); box-shadow: 0 6px 15px rgba(88, 166, 255, 0.5); }
+
+/* Портфель */
 .portfolio-header { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; }
+.balance-card h2 { margin: 10px 0 0 0; font-size: 28px; color: #fff; }
 .portfolio-charts { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 30px; }
-.chart-wrapper { height: 300px; position: relative; }
-.chart-wrapper canvas { max-height: 250px; }
+.chart-wrapper { height: 320px; display: flex; flex-direction: column; }
+.canvas-container { flex-grow: 1; position: relative; width: 100%; height: 100%; display: flex; justify-content: center; }
 .actions-wrapper { display: flex; align-items: center; justify-content: center; }
 .btn-primary { background: var(--accent); color: #fff; border: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; font-size: 16px; }
 .portfolio-table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; }
 .portfolio-table th, .portfolio-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); }
 .portfolio-table th { background: rgba(255,255,255,0.05); }
 
+/* Модалки и профиль */
 .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); }
 .modal-content { background: var(--panel); margin: 10% auto; padding: 24px; border: 1px solid var(--border); border-radius: 10px; width: 400px; }
 .close { color: #8b949e; float: right; font-size: 28px; cursor: pointer; }
 input[type="number"], input[type="text"] { width: 100%; padding: 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; margin-top: 10px; }
+.profile-stats p { border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 10px; }
 .footer { text-align: center; padding: 40px 0 20px 0; color: #8b949e; font-size: 14px; border-top: 1px solid var(--border); margin-top: 40px; }
