@@ -15,10 +15,10 @@
       <div id="autocompleteList" class="autocomplete-items"></div>
     </div>
     <div class="nav-tabs">
-  <button class="tab-btn active" onclick="switchTab('dashboard', this)">Терминал</button>
-  <button class="tab-btn" onclick="switchTab('portfolio', this)">Портфель</button>
-  <button class="tab-btn" onclick="switchTab('leaderboard', this)">Топ инвесторов</button>
-</div>
+      <button class="tab-btn active" onclick="switchTab('dashboard', this)">Терминал</button>
+      <button class="tab-btn" onclick="switchTab('portfolio', this)">Портфель</button>
+      <button class="tab-btn" onclick="switchTab('leaderboard', this)">Топ инвесторов</button>
+    </div>
     <div class="user-profile" id="userProfile">
       <button class="btn-small" onclick="openModal('authModal')" id="loginBtn">Войти</button>
       <div id="userInfo" style="display:none;">
@@ -37,9 +37,7 @@
             <div><div class="ticker-name" id="mainTicker">AAPL</div><div class="company-name" id="mainCompany">Apple Inc.</div></div>
             <div class="header-right"><div class="price" id="mainPrice">—</div><div class="change" id="mainChange">—</div></div>
           </div>
-          
           <div class="fair-value-box" id="fairValueBox"></div>
-
           <div class="chart-controls">
             <button class="btn-small" onclick="loadMainChart('price')">Цена</button>
             <button class="btn-small" onclick="loadMainChart('pe')">P/E</button>

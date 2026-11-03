@@ -7,7 +7,7 @@ const WebSocket = require('ws');
 const Parser = require('rss-parser');
 const { RSI, MACD, SMA } = require('technicalindicators');
 const path = require('path');
-const fs = require('fs'); // Встроенный модуль для работы с файлами (замена lowdb)
+const fs = require('fs');
 
 const FINNHUB_KEY = process.env.FINNHUB_KEY;
 const BASE = 'https://finnhub.io/api/v1';
@@ -18,7 +18,7 @@ if (!FINNHUB_KEY) {
   process.exit(1);
 }
 
-// ПРОСТАЯ БАЗА ДАННЫХ (на основе файла db.json)
+// ПРОСТАЯ БАЗА ДАННЫХ
 const DB_FILE = path.join(__dirname, 'db.json');
 let db = { users: [] };
 if (fs.existsSync(DB_FILE)) {
@@ -151,7 +151,7 @@ app.post('/api/register', (req, res) => {
   const { username } = req.body;
   if (!username) return res.status(400).json({ error: 'Введите имя' });
   let user = db.users.find(u => u.username === username);
-  if (!user) { // Если нет - создаем
+  if (!user) {
     user = { username, portfolio: { cash: 10000, holdings: {} }, returnPercent: 0, badges: [] };
     db.users.push(user); saveDB();
   }
