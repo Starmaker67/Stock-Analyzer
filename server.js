@@ -13,19 +13,12 @@ const FINNHUB_KEY = process.env.FINNHUB_KEY;
 const BASE = 'https://finnhub.io/api/v1';
 const PORT = process.env.PORT || 4000;
 
-if (!FINNHUB_KEY) {
-  console.error('❌ Нет FINNHUB_KEY');
-  process.exit(1);
-}
+if (!FINNHUB_KEY) { console.error('❌ Нет FINNHUB_KEY'); process.exit(1); }
 
-// ПРОСТАЯ БАЗА ДАННЫХ
 const DB_FILE = path.join(__dirname, 'db.json');
 let db = { users: [] };
-if (fs.existsSync(DB_FILE)) {
-  try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) { console.error('Ошибка чтения БД'); }
-} else {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-}
+if (fs.existsSync(DB_FILE)) { try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) {} } 
+else { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
 const saveDB = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 
 const WATCHLIST = ['AAPL','MSFT','NVDA','TSLA','AMZN','GOOGL','META','AMD','NFLX','DIS','JPM','V','WMT','KO','XOM','PFE','BA','INTC','CSCO','PYPL','ADBE','CRM','ORCL','IBM','QCOM','TXN','AVGO','MU','AMAT','SBUX','NKE','MCD','PG','JNJ','UNH','HD','CVX','ABBV','MRK','PEP','T','VZ','CMCSA','TMUS','COST','LLY','ACN','DHR','NEE','LIN'];
@@ -67,14 +60,10 @@ const getCandles = (s, days = 60) => cached(`c:${s}:${days}`, 60000, async () =>
   return {
     candles: r.timestamp.map((t, i) => ({ x: t * 1000, o: q.open[i], h: q.high[i], l: q.low[i], c: q.close[i] })).filter(c => c.c !== null),
     indicators: {
-      rsi: rsi.length ? rsi[rsi.length-1] : null,
-      macd: macd.length ? macd[macd.length-1].MACD : null,
-      macdSignal: macd.length ? macd[macd.length-1].signal : null,
-      macdHistogram: macd.length ? macd[macd.length-1].histogram : null,
-      volume: q.volume[q.volume.length-1],
-      sma50: sma50.length ? sma50[sma50.length-1] : null,
-      sma200: sma200.length ? sma200[sma200.length-1] : null,
-      currentPrice: closes[closes.length-1]
+      rsi: rsi.length ? rsi[rsi.length-1] : null, macd: macd.length ? macd[macd.length-1].MACD : null,
+      macdSignal: macd.length ? macd[macd.length-1].signal : null, macdHistogram: macd.length ? macd[macd.length-1].histogram : null,
+      volume: q.volume[q.volume.length-1], sma50: sma50.length ? sma50[sma50.length-1] : null,
+      sma200: sma200.length ? sma200[sma200.length-1] : null, currentPrice: closes[closes.length-1]
     }
   };
 });
@@ -82,10 +71,9 @@ const getCandles = (s, days = 60) => cached(`c:${s}:${days}`, 60000, async () =>
 const getFairValue = (s) => cached(`fv:${s}`, 86400000, async () => {
   const q = await getQuote(s); const f = await getFundamentals(s);
   if (!q.price || !f.pe || f.pe <= 0) return { current: q.price, fair: null };
-  const targetPE = 15; 
-  const fair = (q.price / f.pe) * targetPE;
+  const fair = (q.price / f.pe) * 15; 
   const diff = ((fair - q.price) / q.price) * 100;
-  return { current: q.price, fair: fair, diff: diff, status: diff > 10 ? 'Недооценена' : diff < -10 ? 'Переоценена' : 'Справедливая' };
+  return { current: q.price, fair, diff, status: diff > 10 ? 'Недооценена' : diff < -10 ? 'Переоценена' : 'Справедливая' };
 });
 
 const getHistoricalPE = (s) => cached(`hpe:${s}`, 86400000, async () => {
@@ -100,11 +88,11 @@ const getTechRadar = (s) => cached(`tr:${s}`, 60000, async () => {
   const ind = data.indicators;
   if (!ind.currentPrice) return { score: 0, verdict: 'Нет данных' };
   let score = 0;
-  if (ind.rsi && ind.rsi < 30) score += 2; else if (ind.rsi && ind.rsi > 70) score -= 2;
-  if (ind.macd && ind.macdSignal && ind.macd > ind.macdSignal) score += 2; else if (ind.macd) score -= 2;
-  if (ind.sma50 && ind.currentPrice > ind.sma50) score += 2; else if (ind.sma50) score -= 2;
-  if (ind.sma200 && ind.currentPrice > ind.sma200) score += 2; else if (ind.sma200) score -= 2;
-  if (ind.macdHistogram && ind.macdHistogram > 0) score += 2; else if (ind.macdHistogram) score -= 2;
+  if (ind.rsi < 30) score += 2; else if (ind.rsi > 70) score -= 2;
+  if (ind.macd > ind.macdSignal) score += 2; else score -= 2;
+  if (ind.currentPrice > ind.sma50) score += 2; else score -= 2;
+  if (ind.currentPrice > ind.sma200) score += 2; else score -= 2;
+  if (ind.macdHistogram > 0) score += 2; else score -= 2;
 
   let verdict = 'Нейтрально';
   if (score >= 6) verdict = 'Активно покупать'; else if (score >= 2) verdict = 'Покупать';
@@ -125,13 +113,9 @@ const getNews = () => cached('news', 600000, async () => {
 
 const getHeatmap = () => cached('heatmap', 60000, async () => {
   const promises = WATCHLIST.slice(0, 30).map(async (s) => {
-    try {
-      const q = await getQuote(s); const f = await getFundamentals(s);
-      if (q.price && q.percent !== null) return { symbol: s, percent: q.percent, marketCap: f.marketCap || 100000 };
-    } catch(e) { return null; }
+    try { const q = await getQuote(s); const f = await getFundamentals(s); if (q.price && q.percent !== null) return { symbol: s, percent: q.percent, marketCap: f.marketCap || 100000 }; } catch(e) { return null; }
   });
-  const res = await Promise.all(promises);
-  return res.filter(r => r !== null);
+  return (await Promise.all(promises)).filter(r => r !== null);
 });
 
 const app = express();
@@ -151,10 +135,7 @@ app.post('/api/register', (req, res) => {
   const { username } = req.body;
   if (!username) return res.status(400).json({ error: 'Введите имя' });
   let user = db.users.find(u => u.username === username);
-  if (!user) {
-    user = { username, portfolio: { cash: 10000, holdings: {} }, returnPercent: 0, badges: [] };
-    db.users.push(user); saveDB();
-  }
+  if (!user) { user = { username, portfolio: { cash: 10000, holdings: {} }, returnPercent: 0, badges: [] }; db.users.push(user); saveDB(); }
   res.json(user);
 });
 
