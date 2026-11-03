@@ -15,10 +15,10 @@
       <div id="autocompleteList" class="autocomplete-items"></div>
     </div>
     <div class="nav-tabs">
-      <button class="tab-btn active" onclick="switchTab('dashboard')">Терминал</button>
-      <button class="tab-btn" onclick="switchTab('portfolio')">Портфель</button>
-      <button class="tab-btn" onclick="switchTab('leaderboard')">Топ инвесторов</button>
-    </div>
+  <button class="tab-btn active" onclick="switchTab('dashboard', this)">Терминал</button>
+  <button class="tab-btn" onclick="switchTab('portfolio', this)">Портфель</button>
+  <button class="tab-btn" onclick="switchTab('leaderboard', this)">Топ инвесторов</button>
+</div>
     <div class="user-profile" id="userProfile">
       <button class="btn-small" onclick="openModal('authModal')" id="loginBtn">Войти</button>
       <div id="userInfo" style="display:none;">
