@@ -3,69 +3,139 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stock Analyzer | Starmaker67</title>
+  <title>Stock Analyzer PRO</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
   <div class="top-bar">
-    <div class="logo"><span>📈</span> Stock Analyzer</div>
-    <div class="search-box">
-      <input type="text" id="symbolInput" placeholder="Тикер (напр. NFLX)" onkeypress="if(event.key==='Enter') loadCustomSymbol()">
-      <button onclick="loadCustomSymbol()">Найти</button>
-    </div>
-  </div>
-
-  <div class="main-grid">
-    <div>
-      <div class="stock-card">
-        <div class="stock-header">
-          <div>
-            <div class="ticker-name" id="mainTicker">AAPL</div>
-            <div class="company-name" id="mainCompany">Apple Inc.</div>
-          </div>
-          <div style="text-align: right;">
-            <div class="price" id="mainPrice">—</div>
-            <div class="change" id="mainChange">—</div>
-          </div>
-        </div>
-        <div class="chart-container" id="mainChart">
-          <div class="loading-text"><div class="spinner"></div> Загрузка графика...</div>
-        </div>
-      </div>
-      
-      <div class="analysis">
-        <h3>Анализ акции</h3>
-        <div id="mainAnalysis">
-          <div class="loading-text"><div class="spinner"></div> Загрузка данных...</div>
-        </div>
-      </div>
-    </div>
-
-    <div>
-      <div class="news-panel">
-        <h3>Новости рынка</h3>
-        <div id="newsList">
-          <div class="loading-text"><div class="spinner"></div> Загрузка новостей...</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="watchlist-section">
-    <h2>Популярные акции (50 компаний)</h2>
-    <div class="watchlist-grid" id="watchlistContainer"></div>
+    <div class="logo"><span>📈</span> Stock PRO</div>
     
-    <div class="show-more-container">
-      <button class="show-more-btn" id="showMoreBtn" onclick="showMoreStocks()">Показать еще 8</button>
+    <!-- Поиск с автодополнением -->
+    <div class="search-container">
+      <input type="text" id="symbolInput" placeholder="Поиск (напр. App...)" autocomplete="off">
+      <div id="autocompleteList" class="autocomplete-items"></div>
+    </div>
+
+    <div class="nav-tabs">
+      <button class="tab-btn active" onclick="switchTab('dashboard')">Терминал</button>
+      <button class="tab-btn" onclick="switchTab('portfolio')">Портфель</button>
+      <button class="tab-btn" onclick="switchTab('favorites')">Избранное</button>
     </div>
   </div>
 
-  <div class="footer">
-    © 2026 Stock Analyzer. Автор: <b>Starmaker67</b>
+  <!-- ВКЛАДКА: ТЕРМИНАЛ -->
+  <div id="tab-dashboard" class="tab-content active">
+    <div class="dashboard-layout">
+      <div class="main-column">
+        <div class="stock-card">
+          <div class="stock-header">
+            <div>
+              <div class="ticker-name" id="mainTicker">AAPL</div>
+              <div class="company-name" id="mainCompany">Apple Inc.</div>
+            </div>
+            <div class="header-right">
+              <div class="price" id="mainPrice">—</div>
+              <div class="change" id="mainChange">—</div>
+            </div>
+          </div>
+          
+          <div class="chart-controls">
+            <button class="btn-small" onclick="loadMainChart('price')">График цены</button>
+            <button class="btn-small" onclick="loadMainChart('pe')">Динамика P/E</button>
+            <button class="btn-small btn-buy" onclick="openTradeModal('buy')">Купить</button>
+            <button class="btn-small btn-sell" onclick="openTradeModal('sell')">Продать</button>
+            <button class="btn-small btn-star" id="mainStarBtn" onclick="toggleFavorite(currentMainSymbol)">★</button>
+          </div>
+
+          <div class="chart-container" id="mainChart"></div>
+        </div>
+        
+        <div class="analysis-grid">
+          <div class="analysis-card"><h3>Фундаментальный</h3><div id="fundamentalData"></div></div>
+          <div class="analysis-card"><h3>Технический</h3><div id="technicalData"></div></div>
+        </div>
+      </div>
+
+      <div class="side-column">
+        <div class="news-panel">
+          <h3>Новости</h3>
+          <div id="newsList"></div>
+        </div>
+        <div class="gainers-panel">
+          <h3>🚀 Лидеры роста</h3>
+          <div id="gainersList"></div>
+          <h3>📉 Лидеры падения</h3>
+          <div id="losersList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="watchlist-section">
+      <div class="watchlist-header">
+        <h2>Все акции (100)</h2>
+        <button class="btn-compare" onclick="openCompareModal()">Сравнить акции</button>
+      </div>
+      <div class="watchlist-grid" id="watchlistContainer"></div>
+      <div class="show-more-container"><button class="show-more-btn" id="showMoreBtn" onclick="showMoreStocks()">Показать еще 12</button></div>
+    </div>
   </div>
 
-  <!-- Подключаем библиотеки и наш скрипт -->
+  <!-- ВКЛАДКА: ПОРТФЕЛЬ (Paper Trading) -->
+  <div id="tab-portfolio" class="tab-content">
+    <div class="portfolio-header">
+      <div class="balance-card">
+        <div>Свободные средства (USD)</div>
+        <h2 id="cashBalance">$10,000.00</h2>
+      </div>
+      <div class="balance-card">
+        <div>Стоимость портфеля</div>
+        <h2 id="portfolioValue">$0.00</h2>
+      </div>
+      <div class="balance-card">
+        <div>Общая доходность</div>
+        <h2 id="portfolioPnL">$0.00 (0%)</h2>
+      </div>
+    </div>
+    <h3>Ваши активы</h3>
+    <table class="portfolio-table" id="holdingsTable">
+      <thead><tr><th>Тикер</th><th>Кол-во</th><th>Ср. цена</th><th>Тек. цена</th><th>Стоимость</th><th>P&L</th><th>Действие</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- ВКЛАДКА: ИЗБРАННОЕ -->
+  <div id="tab-favorites" class="tab-content">
+    <h2>Избранные акции</h2>
+    <div class="watchlist-grid" id="favoritesContainer"></div>
+  </div>
+
+  <!-- МОДАЛКА: СДЕЛКА -->
+  <div id="tradeModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('tradeModal')">&times;</span>
+      <h2 id="tradeTitle">Купить AAPL</h2>
+      <p>Цена: $<span id="tradePrice"></span></p>
+      <input type="number" id="tradeShares" placeholder="Количество акций" min="1">
+      <button class="btn-primary" onclick="executeTrade()" id="tradeSubmitBtn">Подтвердить</button>
+    </div>
+  </div>
+
+  <!-- МОДАЛКА: СРАВНЕНИЕ -->
+  <div id="compareModal" class="modal">
+    <div class="modal-content" style="width: 800px;">
+      <span class="close" onclick="closeModal('compareModal')">&times;</span>
+      <h2>Сравнение акций</h2>
+      <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+        <select id="compare1"></select>
+        <select id="compare2"></select>
+        <button class="btn-primary" onclick="runComparison()">Сравнить</button>
+      </div>
+      <div id="comparisonResult"></div>
+    </div>
+  </div>
+
+  <div class="footer">© 2026 Stock Analyzer PRO. Автор: <b>Starmaker67</b></div>
+
   <script src="https://canvasjs.com/assets/script/jquery-1.11.1.min.js"></script>
   <script src="https://cdn.canvasjs.com/canvasjs.stock.min.js"></script>
   <script src="app.js"></script>
