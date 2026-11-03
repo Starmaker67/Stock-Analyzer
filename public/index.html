@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Analyzer | Starmaker67</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="top-bar">
+    <div class="logo"><span>📈</span> Stock Analyzer</div>
+    <div class="search-box">
+      <input type="text" id="symbolInput" placeholder="Тикер (напр. NFLX)" onkeypress="if(event.key==='Enter') loadCustomSymbol()">
+      <button onclick="loadCustomSymbol()">Найти</button>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div>
+      <div class="stock-card">
+        <div class="stock-header">
+          <div>
+            <div class="ticker-name" id="mainTicker">AAPL</div>
+            <div class="company-name" id="mainCompany">Apple Inc.</div>
+          </div>
+          <div style="text-align: right;">
+            <div class="price" id="mainPrice">—</div>
+            <div class="change" id="mainChange">—</div>
+          </div>
+        </div>
+        <div class="chart-container" id="mainChart">
+          <div class="loading-text"><div class="spinner"></div> Загрузка графика...</div>
+        </div>
+      </div>
+      
+      <div class="analysis">
+        <h3>Анализ акции</h3>
+        <div id="mainAnalysis">
+          <div class="loading-text"><div class="spinner"></div> Загрузка данных...</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="news-panel">
+        <h3>Новости рынка</h3>
+        <div id="newsList">
+          <div class="loading-text"><div class="spinner"></div> Загрузка новостей...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="watchlist-section">
+    <h2>Популярные акции (50 компаний)</h2>
+    <div class="watchlist-grid" id="watchlistContainer"></div>
+    
+    <div class="show-more-container">
+      <button class="show-more-btn" id="showMoreBtn" onclick="showMoreStocks()">Показать еще 8</button>
+    </div>
+  </div>
+
+  <div class="footer">
+    © 2026 Stock Analyzer. Автор: <b>Starmaker67</b>
+  </div>
+
+  <!-- Подключаем библиотеки и наш скрипт -->
+  <script src="https://canvasjs.com/assets/script/jquery-1.11.1.min.js"></script>
+  <script src="https://cdn.canvasjs.com/canvasjs.stock.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
