@@ -102,22 +102,17 @@ async function fetchPortfolioQuotes() {
   let updated = false;
   
   for (const sym of holdings) {
-    // Если цены нет или она равна 0, делаем запрос
-    if (!allQuotes[sym] || !allQuotes[sym].price) {
-      try {
-        const q = await fetch('/api/quote/' + sym).then(r => r.json());
-        if (q && q.price) {
-          allQuotes[sym] = q;
-          updated = true;
-        }
-      } catch(e) { console.error('Ошибка загрузки цены для ' + sym); }
-    }
+    try {
+      // Всегда запрашиваем свежую цену с сервера
+      const q = await fetch('/api/quote/' + sym).then(r => r.json());
+      if (q && q.price) {
+        allQuotes[sym] = q;
+        updated = true;
+      }
+    } catch(e) { console.error('Ошибка загрузки цены для ' + sym); }
   }
   
-  // Если что-то подгрузили, перерисовываем интерфейс
-  if (updated) {
-    updatePortfolioUI();
-  }
+  if (updated) updatePortfolioUI();
 }
 
 function calcReturnPercent() {
@@ -401,6 +396,8 @@ window.onload = async () => {
   await fetchPortfolioQuotes();
   updatePortfolioUI(); 
   renderFavorites();
+
+  setInterval(fetchPortfolioQuotes, 10000);
 
   const container = document.getElementById('watchlistContainer');
   for (let i = 0; i < allStocks.length; i++) {

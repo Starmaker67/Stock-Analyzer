@@ -22,8 +22,47 @@ if (fs.existsSync(DB_FILE)) { try { db = JSON.parse(fs.readFileSync(DB_FILE, 'ut
 else { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
 const saveDB = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 
-const WATCHLIST = ['AAPL','MSFT','NVDA','TSLA','AMZN','GOOGL','META','AMD','NFLX','DIS','JPM','V','WMT','KO','XOM','PFE','BA','INTC','CSCO','PYPL','ADBE','CRM','ORCL','IBM','QCOM','TXN','AVGO','MU','AMAT','SBUX','NKE','MCD','PG','JNJ','UNH','HD','CVX','ABBV','MRK','PEP','T','VZ','CMCSA','TMUS','COST','LLY','ACN','DHR','NEE','LIN'];
-const COMPANY_NAMES = { 'AAPL':'Apple Inc.','MSFT':'Microsoft Corp.','NVDA':'NVIDIA Corp.','TSLA':'Tesla Inc.','AMZN':'Amazon.com','GOOGL':'Alphabet Inc.','META':'Meta Platforms','AMD':'Advanced Micro','NFLX':'Netflix Inc.','DIS':'Walt Disney Co.','JPM':'JPMorgan Chase','V':'Visa Inc.','WMT':'Walmart Inc.','KO':'Coca-Cola Co.','XOM':'Exxon Mobil','PFE':'Pfizer Inc.','BA':'Boeing Co.','INTC':'Intel Corp.','CSCO':'Cisco Systems','PYPL':'PayPal Holdings','ADBE':'Adobe Inc.','CRM':'Salesforce','ORCL':'Oracle Corp.','IBM':'IBM Corp.','QCOM':'Qualcomm','TXN':'Texas Instruments','AVGO':'Broadcom','MU':'Micron Tech','AMAT':'Applied Materials','SBUX':'Starbucks','NKE':'Nike Inc.','MCD':'McDonalds','PG':'Procter & Gamble','JNJ':'Johnson & Johnson','UNH':'UnitedHealth','HD':'Home Depot','CVX':'Chevron','ABBV':'AbbVie','MRK':'Merck & Co.','PEP':'PepsiCo','T':'AT&T','VZ':'Verizon','CMCSA':'Comcast','TMUS':'T-Mobile','COST':'Costco','LLY':'Eli Lilly','ACN':'Accenture','DHR':'Danaher','NEE':'NextEra Energy','LIN':'Linde plc' };
+// СПИСОК ИЗ 100 АКЦИЙ
+const WATCHLIST = [
+  // Tech (30)
+  'AAPL','MSFT','NVDA','TSLA','AMZN','GOOGL','META','AMD','NFLX','DIS',
+  'ADBE','CRM','ORCL','IBM','QCOM','TXN','AVGO','MU','AMAT','SBUX',
+  'INTC','CSCO','PYPL','SNOW','CRWD','PANW','NOW','WDAY','TEAM','DDOG',
+  // Finance (15)
+  'JPM','V','MA','BAC','WFC','C','GS','MS','AXP','BLK','SCHW','USB','PNC','COF','BK',
+  // Healthcare (15)
+  'JNJ','UNH','PFE','ABBV','MRK','TMO','ABT','DHR','BMY','AMGN','GILD','CVS','MDT','LLY','ZTS',
+  // Consumer (15)
+  'WMT','KO','PEP','COST','MCD','NKE','PG','HD','LOW','TGT','TJX','DG','DLTR','EL','CL',
+  // Energy & Industrial (15)
+  'XOM','CVX','COP','SLB','BA','CAT','DE','GE','MMM','HON','UNP','UPS','LMT','RTX','LUV',
+  // Comm & Others (10)
+  'T','VZ','CMCSA','TMUS','CHTR','SPOT','UBER','LYFT','ABNB','BKNG'
+];
+
+const COMPANY_NAMES = {
+  'AAPL':'Apple Inc.','MSFT':'Microsoft Corp.','NVDA':'NVIDIA Corp.','TSLA':'Tesla Inc.','AMZN':'Amazon.com',
+  'GOOGL':'Alphabet Inc.','META':'Meta Platforms','AMD':'Advanced Micro','NFLX':'Netflix Inc.','DIS':'Walt Disney Co.',
+  'ADBE':'Adobe Inc.','CRM':'Salesforce','ORCL':'Oracle Corp.','IBM':'IBM Corp.','QCOM':'Qualcomm',
+  'TXN':'Texas Instruments','AVGO':'Broadcom','MU':'Micron Tech','AMAT':'Applied Materials','SBUX':'Starbucks',
+  'INTC':'Intel Corp.','CSCO':'Cisco Systems','PYPL':'PayPal Holdings','SNOW':'Snowflake','CRWD':'CrowdStrike',
+  'PANW':'Palo Alto','NOW':'ServiceNow','WDAY':'Workday','TEAM':'Atlassian','DDOG':'Datadog',
+  'JPM':'JPMorgan Chase','V':'Visa Inc.','MA':'Mastercard','BAC':'Bank of America','WFC':'Wells Fargo',
+  'C':'Citigroup','GS':'Goldman Sachs','MS':'Morgan Stanley','AXP':'American Express','BLK':'BlackRock',
+  'SCHW':'Charles Schwab','USB':'U.S. Bancorp','PNC':'PNC Financial','COF':'Capital One','BK':'Bank of NY Mellon',
+  'JNJ':'Johnson & Johnson','UNH':'UnitedHealth','PFE':'Pfizer Inc.','ABBV':'AbbVie','MRK':'Merck & Co.',
+  'TMO':'Thermo Fisher','ABT':'Abbott Labs','DHR':'Danaher','BMY':'Bristol-Myers','AMGN':'Amgen',
+  'GILD':'Gilead Sciences','CVS':'CVS Health','MDT':'Medtronic','LLY':'Eli Lilly','ZTS':'Zoetis',
+  'WMT':'Walmart Inc.','KO':'Coca-Cola Co.','PEP':'PepsiCo','COST':'Costco','MCD':'McDonalds',
+  'NKE':'Nike Inc.','PG':'Procter & Gamble','HD':'Home Depot','LOW':'Lowes','TGT':'Target',
+  'TJX':'TJX Companies','DG':'Dollar General','DLTR':'Dollar Tree','EL':'Estee Lauder','CL':'Colgate-Palmolive',
+  'XOM':'Exxon Mobil','CVX':'Chevron','COP':'ConocoPhillips','SLB':'Schlumberger','BA':'Boeing Co.',
+  'CAT':'Caterpillar','DE':'Deere & Co.','GE':'General Electric','MMM':'3M','HON':'Honeywell',
+  'UNP':'Union Pacific','UPS':'UPS','LMT':'Lockheed Martin','RTX':'Raytheon','LUV':'Southwest Airlines',
+  'T':'AT&T','VZ':'Verizon','CMCSA':'Comcast','TMUS':'T-Mobile','CHTR':'Charter Comm.',
+  'SPOT':'Spotify','UBER':'Uber Tech','LYFT':'Lyft Inc.','ABNB':'Airbnb','BKNG':'Booking Holdings'
+};
+
 
 const cache = new Map();
 async function cached(key, ttl, fn) {
@@ -174,8 +213,19 @@ wss.on('connection', (s) => { clients.add(s); s.on('close', () => clients.delete
 function broadcast(p) { const msg = JSON.stringify(p); clients.forEach(c => { if (c.readyState === 1) c.send(msg); }); }
 function connectFinnhub() {
   const ws = new WebSocket(`wss://ws.finnhub.io?token=${FINNHUB_KEY}`);
-  ws.on('open', () => { WATCHLIST.slice(0, 20).forEach(s => ws.send(JSON.stringify({ type: 'subscribe', symbol: s }))); });
-  ws.on('message', (raw) => { const m = JSON.parse(raw); if (m.type === 'trade') m.data.forEach(t => broadcast({ symbol: t.s, price: t.p })); });
+  ws.on('open', () => {
+    console.log('✅ Подключено к Finnhub WS');
+    // Подписываемся с задержкой в 50мс, чтобы не превысить лимиты Finnhub
+    WATCHLIST.forEach((s, index) => {
+      setTimeout(() => {
+        ws.send(JSON.stringify({ type: 'subscribe', symbol: s }));
+      }, index * 50);
+    });
+  });
+  ws.on('message', (raw) => { 
+    const m = JSON.parse(raw); 
+    if (m.type === 'trade') m.data.forEach(t => broadcast({ symbol: t.s, price: t.p })); 
+  });
   ws.on('close', () => setTimeout(connectFinnhub, 3000));
+  ws.on('error', (e) => console.error('Finnhub WS Error:', e.message));
 }
-server.listen(PORT, '0.0.0.0', () => { console.log(`🚀 Server on ${PORT}`); connectFinnhub(); });
