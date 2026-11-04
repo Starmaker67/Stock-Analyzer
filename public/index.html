@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stock Analyzer ULTIMATE</title>
+  <title>StarStocks</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="top-bar">
-    <div class="logo"><span>📈</span> Stock PRO</div>
+    <div class="logo">📊 StarStocks</div>
     <div class="search-container">
       <input type="text" id="symbolInput" placeholder="Поиск (напр. App...)" autocomplete="off">
       <div id="autocompleteList" class="autocomplete-items"></div>
@@ -36,7 +36,6 @@
         <div class="stock-card">
           <div class="stock-header">
             <div>
-              <!-- Тикер отображается только здесь -->
               <div class="ticker-name" id="mainTicker">AAPL</div>
               <div class="company-name" id="mainCompany">Apple Inc.</div>
             </div>
@@ -145,12 +144,19 @@
     </div>
   </div>
 
+  <!-- ОБНОВЛЕННАЯ МОДАЛКА АВТОРИЗАЦИИ -->
   <div id="authModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeModal('authModal')">&times;</span>
-      <h2>Вход / Регистрация</h2>
-      <input type="text" id="authUsername" placeholder="Ваш никнейм">
-      <button class="btn-primary" onclick="login()">Войти</button>
+      <h2>Вход в StarStocks</h2>
+      <input type="email" id="authEmail" placeholder="Email" style="margin-bottom:10px;">
+      <input type="password" id="authPassword" placeholder="Пароль" style="margin-bottom:10px;">
+      <input type="text" id="authUsername" placeholder="Никнейм (только для регистрации)" style="margin-bottom:10px;">
+      
+      <div style="display:flex; gap:10px; margin-top:15px;">
+        <button class="btn-primary" onclick="login()" style="flex:1;">Войти</button>
+        <button class="btn-primary" onclick="register()" style="flex:1; background:#238636;">Регистрация</button>
+      </div>
     </div>
   </div>
 
@@ -159,6 +165,7 @@
       <span class="close" onclick="closeModal('profileModal')">&times;</span>
       <h2>Профиль: <span id="profUsername"></span></h2>
       <div class="profile-stats">
+        <p><b>Email:</b> <span id="profEmail"></span></p>
         <p><b>Доходность:</b> <span id="profReturn"></span></p>
         <p><b>Свободный кэш:</b> <span id="profCash"></span></p>
         <p><b>Достижения:</b> <span id="profBadges" style="font-size:20px;"></span></p>
@@ -166,7 +173,7 @@
     </div>
   </div>
 
-  <div class="footer">© 2026 Stock Analyzer ULTIMATE. Автор: <b>Starmaker67</b></div>
+  <div class="footer">© 2026 StarStocks. Автор: <b>Starmaker67</b></div>
 
   <script src="https://canvasjs.com/assets/script/jquery-1.11.1.min.js"></script>
   <script src="https://cdn.canvasjs.com/canvasjs.stock.min.js"></script>

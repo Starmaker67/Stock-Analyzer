@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 4000;
 
 if (!FINNHUB_KEY) { console.error('❌ Нет FINNHUB_KEY'); process.exit(1); }
 
+// БАЗА ДАННЫХ
 const DB_FILE = path.join(__dirname, 'db.json');
 let db = { users: [] };
 if (fs.existsSync(DB_FILE)) { try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) {} } 
@@ -101,31 +102,16 @@ const getTechRadar = (s) => cached(`tr:${s}`, 60000, async () => {
 });
 
 const parser = new Parser();
-// Найдите этот блок и замените ссылку внутри parseURL
 const getNews = () => cached('news', 600000, async () => {
   try {
-    // Более стабильная лента новостей CNBC
     const feed = await parser.parseURL('https://www.cnbc.com/id/100003114/device/rss/rss.html');
     return feed.items.slice(0, 6).map(item => {
-      let image = null; 
-      if (item.enclosure?.url) image = item.enclosure.url; 
-      else if (item.content) { 
-        const m = item.content.match(/<img[^>]+src="([^">]+)"/); 
-        if (m) image = m[1]; 
-      }
-      return { 
-        headline: item.title, 
-        source: 'CNBC', 
-        url: item.link, 
-        datetime: item.pubDate ? Math.floor(new Date(item.pubDate).getTime() / 1000) : Math.floor(Date.now() / 1000), 
-        image 
-      };
+      let image = null; if (item.enclosure?.url) image = item.enclosure.url; else if (item.content) { const m = item.content.match(/<img[^>]+src="([^">]+)"/); if (m) image = m[1]; }
+      return { headline: item.title, source: 'CNBC', url: item.link, datetime: Math.floor(new Date(item.pubDate).getTime() / 1000), image };
     });
-  } catch (e) { 
-    console.error('News error:', e.message);
-    return []; 
-  }
+  } catch (e) { return []; }
 });
+
 const getHeatmap = () => cached('heatmap', 60000, async () => {
   const promises = WATCHLIST.slice(0, 30).map(async (s) => {
     try { const q = await getQuote(s); const f = await getFundamentals(s); if (q.price && q.percent !== null) return { symbol: s, percent: q.percent, marketCap: f.marketCap || 100000 }; } catch(e) { return null; }
@@ -146,17 +132,27 @@ app.get('/api/heatmap', async (req, res) => { res.json(await getHeatmap()); });
 app.get('/api/news', async (req, res) => { res.json(await getNews()); });
 app.get('/api/watchlist', (req, res) => { res.json(WATCHLIST.map(sym => ({ symbol: sym, name: COMPANY_NAMES[sym] || sym }))); });
 
-app.post('/api/register', (req, res) => {
-  const { username } = req.body;
-  if (!username) return res.status(400).json({ error: 'Введите имя' });
-  let user = db.users.find(u => u.username === username);
-  if (!user) { user = { username, portfolio: { cash: 10000, holdings: {} }, returnPercent: 0, badges: [] }; db.users.push(user); saveDB(); }
+// РЕГИСТРАЦИЯ И АВТОРИЗАЦИЯ ПО EMAIL
+app.post('/api/auth/register', (req, res) => {
+  const { email, password, username } = req.body;
+  if (!email || !password || !username) return res.status(400).json({ error: 'Заполните все поля' });
+  if (db.users.find(u => u.email === email)) return res.status(400).json({ error: 'Этот Email уже занят' });
+  
+  const newUser = { email, password, username, portfolio: { cash: 10000, holdings: {}, history: [] }, returnPercent: 0, badges: [] };
+  db.users.push(newUser); saveDB();
+  res.json(newUser);
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body;
+  const user = db.users.find(u => u.email === email && u.password === password);
+  if (!user) return res.status(400).json({ error: 'Неверный Email или пароль' });
   res.json(user);
 });
 
 app.post('/api/update-portfolio', (req, res) => {
-  const { username, portfolio, returnPercent } = req.body;
-  const user = db.users.find(u => u.username === username);
+  const { email, portfolio, returnPercent } = req.body;
+  const user = db.users.find(u => u.email === email);
   if (user) {
     user.portfolio = portfolio; user.returnPercent = returnPercent;
     if (returnPercent > 50 && !user.badges.includes('🐺 Волк с Уолл-Стрит')) user.badges.push('🐺 Волк с Уолл-Стрит');

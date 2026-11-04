@@ -5,12 +5,14 @@ let pieChart = null;
 let allStocks = [];
 let allQuotes = {};
 
-let currentUser = localStorage.getItem('username') || null;
+let currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
 let localPortfolio = JSON.parse(localStorage.getItem('portfolio')) || { cash: 10000, holdings: {}, history: [] };
 let favorites = JSON.parse(localStorage.getItem('favorites')) || [];
 
-// WebSocket
+// WebSocket (Сглаживаем обновления)
 let ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+let updateTimeout = null;
+
 ws.onmessage = (e) => {
   const { symbol, price } = JSON.parse(e.data);
   if (!allQuotes[symbol]) allQuotes[symbol] = {};
@@ -20,11 +22,15 @@ ws.onmessage = (e) => {
     const pEl = document.getElementById('mainPrice');
     if (pEl) pEl.textContent = price.toFixed(2);
   }
-  // Обновляем мини-карточку
   const miniPriceEl = document.getElementById(`wl-price-${symbol}`);
   if (miniPriceEl) miniPriceEl.textContent = price.toFixed(2);
-  
-  updatePortfolioUI();
+
+  // Плавное обновление портфеля (не чаще 1 раза в секунду)
+  if (updateTimeout) return;
+  updateTimeout = setTimeout(() => {
+    updatePortfolioUI();
+    updateTimeout = null;
+  }, 1000);
 };
 
 function switchTab(tabId, btn) {
@@ -56,12 +62,10 @@ async function loadMainStock(symbol, name) {
     const q = await fetch('/api/quote/' + symbol).then(r => r.json());
     allQuotes[symbol] = q;
     document.getElementById('mainPrice').textContent = q.price ? q.price.toFixed(2) : '—';
-    
     const ch = document.getElementById('mainChange');
     const changeVal = q.change || 0;
-    const percentVal = q.percent || 0;
-    ch.textContent = (changeVal >= 0 ? '+' : '') + changeVal.toFixed(2) + ' (' + percentVal.toFixed(2) + '%)';
-    ch.className = 'change ' + (changeVal >= 0 ? 'up' : 'down'); // Правильный цвет
+    ch.textContent = (changeVal >= 0 ? '+' : '') + changeVal.toFixed(2) + ' (' + (q.percent || 0).toFixed(2) + '%)';
+    ch.className = 'change ' + (changeVal >= 0 ? 'up' : 'down');
 
     const f = await fetch('/api/fundamentals/' + symbol).then(r => r.json());
     const fMetrics = [
@@ -87,7 +91,6 @@ async function loadMainStock(symbol, name) {
   } catch(e) { console.error(e); }
 }
 
-// Функция расчета доходности портфеля
 function calcReturnPercent() {
   let stockValue = 0;
   for (const [sym, data] of Object.entries(localPortfolio.holdings)) {
@@ -95,14 +98,11 @@ function calcReturnPercent() {
     stockValue += currPrice * data.shares;
   }
   const totalValue = localPortfolio.cash + stockValue;
-  const initialCapital = 10000; // Начальный капитал
-  const profit = totalValue - initialCapital;
-  return (profit / initialCapital) * 100;
+  return ((totalValue - 10000) / 10000) * 100;
 }
 
 function updatePortfolioUI() {
   document.getElementById('cashBalance').textContent = '$' + localPortfolio.cash.toLocaleString('en-US', {minimumFractionDigits: 2});
-  
   let stockValue = 0;
   const tbody = document.querySelector('#holdingsTable tbody');
   if (!tbody) return;
@@ -128,8 +128,6 @@ function updatePortfolioUI() {
   }
 
   document.getElementById('portfolioValue').textContent = '$' + stockValue.toLocaleString('en-US', {minimumFractionDigits: 2});
-  
-  // Расчет общей доходности
   const totalValue = localPortfolio.cash + stockValue;
   const profit = totalValue - 10000;
   const returnPercent = (profit / 10000) * 100;
@@ -137,7 +135,6 @@ function updatePortfolioUI() {
   pnlEl.textContent = `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${returnPercent.toFixed(2)}%)`;
   pnlEl.className = profit >= 0 ? 'up' : 'down';
 
-  // Отрисовка диаграммы (фикс рендера)
   const ctx = document.getElementById('diversificationChart');
   if (ctx) {
     if (pieChart) {
@@ -147,53 +144,75 @@ function updatePortfolioUI() {
     } else {
       pieChart = new Chart(ctx, {
         type: 'doughnut',
-        data: { 
-          labels: pieData.map(d => d.label), 
-          datasets: [{ data: pieData.map(d => d.value), backgroundColor: ['#58a6ff','#238636','#da3633','#e3b341','#a371f7','#8b949e','#f0883e'], borderWidth: 0 }] 
-        },
-        options: { 
-          responsive: true, 
-          maintainAspectRatio: false, 
-          plugins: { legend: { position: 'right', labels: { color: '#c9d1d9' } } } 
-        }
+        data: { labels: pieData.map(d => d.label), datasets: [{ data: pieData.map(d => d.value), backgroundColor: ['#58a6ff','#238636','#da3633','#e3b341','#a371f7','#8b949e','#f0883e'], borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#c9d1d9' } } } }
       });
     }
   }
 }
 
-async function loadNews() {
-  const container = document.getElementById('newsList');
-  container.innerHTML = Array(4).fill(0).map(() => `<div class="skeleton-item"><div class="skeleton-img"></div><div class="skeleton-text"><div class="skeleton-line"></div><div class="skeleton-line short"></div></div></div>`).join('');
-  
-  try {
-    const news = await fetch('/api/news').then(r => r.json());
-    if(!news.length) throw new Error("No news");
-    container.innerHTML = news.map(n => `
-      <div class="news-item" style="display:flex; gap:10px; margin-bottom:10px; border-bottom:1px solid #30363d; padding-bottom:10px;">
-        ${n.image ? `<img src="${n.image}" style="width:60px; height:60px; border-radius:6px; object-fit:cover;">` : ''}
-        <div>
-          <a href="${n.url}" target="_blank" style="color:#c9d1d9; font-size:13px; text-decoration:none; font-weight:500;">${n.headline}</a>
-          <div style="font-size:11px; color:#8b949e; margin-top:4px;">CNBC • ${new Date(n.datetime*1000).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</div>
-        </div>
-      </div>
-    `).join('');
-  } catch(e) { container.innerHTML = '<p>Нет новостей</p>'; }
-}
-
-// Функция просмотра профиля
+// АВТОРИЗАЦИЯ И ПРОФИЛЬ
 function openProfile() {
   if (!currentUser) return;
-  document.getElementById('profUsername').textContent = currentUser;
+  document.getElementById('profUsername').textContent = currentUser.username;
+  document.getElementById('profEmail').textContent = currentUser.email;
   document.getElementById('profReturn').textContent = document.getElementById('portfolioPnL').textContent;
   document.getElementById('profReturn').className = document.getElementById('portfolioPnL').className;
   document.getElementById('profCash').textContent = document.getElementById('cashBalance').textContent;
-  
-  // Здесь можно запросить бейджи с сервера, для простоты выводим заглушку
-  document.getElementById('profBadges').textContent = '🏅 Начинающий инвестор';
+  document.getElementById('profBadges').textContent = currentUser.badges ? currentUser.badges.join(' ') : '🏅 Начинающий';
   openModal('profileModal');
 }
 
-// Остальной код (графики, сделки, авторизация) остается без изменений...
+function register() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value.trim();
+  const username = document.getElementById('authUsername').value.trim();
+  if (!email || !password || !username) return alert('Заполните все поля!');
+  
+  fetch('/api/auth/register', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email, password, username }) })
+    .then(r => r.json()).then(data => {
+      if (data.error) return alert(data.error);
+      currentUser = data; localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      closeModal('authModal'); checkAuth(); syncPortfolio();
+    });
+}
+
+function login() {
+  const email = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value.trim();
+  if (!email || !password) return alert('Введите Email и пароль!');
+
+  fetch('/api/auth/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email, password }) })
+    .then(r => r.json()).then(data => {
+      if (data.error) return alert(data.error);
+      currentUser = data; localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      closeModal('authModal'); checkAuth(); syncPortfolio();
+    });
+}
+
+function logout() { 
+  currentUser = null; 
+  localStorage.removeItem('currentUser'); 
+  checkAuth(); 
+}
+
+function checkAuth() {
+  if (currentUser) {
+    document.getElementById('loginBtn').style.display = 'none';
+    document.getElementById('userInfo').style.display = 'block';
+    document.getElementById('displayUsername').textContent = currentUser.username;
+  } else {
+    document.getElementById('loginBtn').style.display = 'block';
+    document.getElementById('userInfo').style.display = 'none';
+  }
+}
+
+function syncPortfolio() {
+  if (!currentUser) return;
+  fetch('/api/update-portfolio', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email: currentUser.email, portfolio: localPortfolio, returnPercent: calcReturnPercent() }) });
+}
+
+// ОСТАЛЬНЫЕ ФУНКЦИИ (Графики, Новости, Сделки)
 async function loadMainChart(type) {
   const el = document.getElementById('mainChart'); el.innerHTML = ''; if (mainChart) mainChart.destroy();
   try {
@@ -273,7 +292,7 @@ function exportCSV() {
 
 async function loadLeaderboard() {
   const users = await fetch('/api/leaderboard').then(r => r.json());
-  document.querySelector('#leaderboardTable tbody').innerHTML = users.map((u, i) => `<tr><td>#${i+1}</td><td>${u.username} ${u.username === currentUser ? '(Вы)' : ''}</td><td class="${u.returnPercent >= 0 ? 'up' : 'down'}">${u.returnPercent > 0 ? '+' : ''}${u.returnPercent.toFixed(2)}%</td><td>${u.badges.join(' ')}</td></tr>`).join('');
+  document.querySelector('#leaderboardTable tbody').innerHTML = users.map((u, i) => `<tr><td>#${i+1}</td><td>${u.username} ${currentUser && u.email === currentUser.email ? '(Вы)' : ''}</td><td class="${u.returnPercent >= 0 ? 'up' : 'down'}">${u.returnPercent > 0 ? '+' : ''}${u.returnPercent.toFixed(2)}%</td><td>${u.badges.join(' ')}</td></tr>`).join('');
 }
 
 async function loadHeatmap() {
@@ -285,19 +304,22 @@ async function loadHeatmap() {
   }).join('');
 }
 
-function checkAuth() {
-  if (currentUser) { document.getElementById('loginBtn').style.display = 'none'; document.getElementById('userInfo').style.display = 'block'; document.getElementById('displayUsername').textContent = currentUser; }
-  else { document.getElementById('loginBtn').style.display = 'block'; document.getElementById('userInfo').style.display = 'none'; }
-}
-function login() {
-  const username = document.getElementById('authUsername').value.trim(); if (!username) return alert('Введите ник');
-  fetch('/api/register', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({username}) })
-    .then(r => r.json()).then(data => { if (data.error) return alert(data.error); currentUser = username; localStorage.setItem('username', currentUser); closeModal('authModal'); checkAuth(); syncPortfolio(); });
-}
-function logout() { currentUser = null; localStorage.removeItem('username'); checkAuth(); }
-function syncPortfolio() {
-  if (!currentUser) return;
-  fetch('/api/update-portfolio', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ username: currentUser, portfolio: localPortfolio, returnPercent: calcReturnPercent() }) });
+async function loadNews() {
+  const container = document.getElementById('newsList');
+  container.innerHTML = Array(4).fill(0).map(() => `<div class="skeleton-item"><div class="skeleton-img"></div><div class="skeleton-text"><div class="skeleton-line"></div><div class="skeleton-line short"></div></div></div>`).join('');
+  try {
+    const news = await fetch('/api/news').then(r => r.json());
+    if(!news.length) throw new Error("No news");
+    container.innerHTML = news.map(n => `
+      <div class="news-item" style="display:flex; gap:10px; margin-bottom:10px; border-bottom:1px solid #30363d; padding-bottom:10px;">
+        ${n.image ? `<img src="${n.image}" style="width:60px; height:60px; border-radius:6px; object-fit:cover;">` : ''}
+        <div>
+          <a href="${n.url}" target="_blank" style="color:#c9d1d9; font-size:13px; text-decoration:none; font-weight:500;">${n.headline}</a>
+          <div style="font-size:11px; color:#8b949e; margin-top:4px;">CNBC • ${new Date(n.datetime*1000).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { container.innerHTML = '<p>Нет новостей</p>'; }
 }
 
 const searchInput = document.getElementById('symbolInput'); const autoList = document.getElementById('autocompleteList');
@@ -323,12 +345,19 @@ async function loadMiniChart(symbol) {
     if (pEl) pEl.textContent = q.price ? q.price.toFixed(2) : '—';
     if (cEl) { 
       cEl.textContent = q.percent ? `${q.percent > 0 ? '+' : ''}${q.percent.toFixed(2)}%` : '—'; 
-      cEl.className = 'wl-change ' + (q.percent >= 0 ? 'up' : 'down'); // Цвет мини-процента
+      cEl.className = 'wl-change ' + (q.percent >= 0 ? 'up' : 'down');
     }
     const res = await fetch('/api/candles/' + symbol).then(r=>r.json());
     const pts = res.candles.slice(-30).map(p => ({ x: new Date(p.x), y: [p.o, p.h, p.l, p.c] }));
     const chartEl = document.getElementById(`wl-chart-${symbol}`);
-    if (chartEl) { new CanvasJS.Chart(`wl-chart-${symbol}`, { theme: "dark2", backgroundColor: "transparent", height: 120, padding: 0, axisX: { visible: false }, axisY: { visible: false }, data: [{ type: 'candlestick', dataPoints: pts, risingColor: '#238636', fallingColor: '#da3633' }] }).render(); }
+    if (chartEl) { 
+        chartEl.innerHTML = '';
+        new CanvasJS.Chart(`wl-chart-${symbol}`, { 
+            theme: "dark2", backgroundColor: "transparent", height: 120, width: chartEl.clientWidth, padding: 0, 
+            axisX: { visible: false }, axisY: { visible: false }, 
+            data: [{ type: 'candlestick', dataPoints: pts, risingColor: '#238636', fallingColor: '#da3633' }] 
+        }).render(); 
+    }
   } catch(e) {}
 }
 
