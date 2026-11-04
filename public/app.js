@@ -9,7 +9,7 @@ let currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
 let localPortfolio = JSON.parse(localStorage.getItem('portfolio')) || { cash: 10000, holdings: {}, history: [] };
 let favorites = JSON.parse(localStorage.getItem('favorites')) || [];
 
-// WebSocket (Сглаживаем обновления)
+// WebSocket
 let ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
 let updateTimeout = null;
 
@@ -25,7 +25,7 @@ ws.onmessage = (e) => {
   const miniPriceEl = document.getElementById(`wl-price-${symbol}`);
   if (miniPriceEl) miniPriceEl.textContent = price.toFixed(2);
 
-  // Плавное обновление портфеля (не чаще 1 раза в секунду)
+  // Плавное обновление портфеля
   if (updateTimeout) return;
   updateTimeout = setTimeout(() => {
     updatePortfolioUI();
@@ -38,9 +38,14 @@ function switchTab(tabId, btn) {
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + tabId).classList.add('active');
   if (btn) btn.classList.add('active');
+  
   if (tabId === 'leaderboard') loadLeaderboard();
   if (tabId === 'favorites') renderFavorites();
-  if (tabId === 'portfolio') updatePortfolioUI();
+  if (tabId === 'portfolio') {
+    // Запрашиваем актуальные цены для активов в портфеле
+    fetchPortfolioQuotes();
+    updatePortfolioUI();
+  }
 }
 
 // ГЛАВНЫЙ ЭКРАН
@@ -91,6 +96,30 @@ async function loadMainStock(symbol, name) {
   } catch(e) { console.error(e); }
 }
 
+// 🔥 НОВАЯ ФУНКЦИЯ: Загружает цены для активов в портфеле
+async function fetchPortfolioQuotes() {
+  const holdings = Object.keys(localPortfolio.holdings);
+  let updated = false;
+  
+  for (const sym of holdings) {
+    // Если цены нет или она равна 0, делаем запрос
+    if (!allQuotes[sym] || !allQuotes[sym].price) {
+      try {
+        const q = await fetch('/api/quote/' + sym).then(r => r.json());
+        if (q && q.price) {
+          allQuotes[sym] = q;
+          updated = true;
+        }
+      } catch(e) { console.error('Ошибка загрузки цены для ' + sym); }
+    }
+  }
+  
+  // Если что-то подгрузили, перерисовываем интерфейс
+  if (updated) {
+    updatePortfolioUI();
+  }
+}
+
 function calcReturnPercent() {
   let stockValue = 0;
   for (const [sym, data] of Object.entries(localPortfolio.holdings)) {
@@ -103,6 +132,7 @@ function calcReturnPercent() {
 
 function updatePortfolioUI() {
   document.getElementById('cashBalance').textContent = '$' + localPortfolio.cash.toLocaleString('en-US', {minimumFractionDigits: 2});
+  
   let stockValue = 0;
   const tbody = document.querySelector('#holdingsTable tbody');
   if (!tbody) return;
@@ -128,15 +158,18 @@ function updatePortfolioUI() {
   }
 
   document.getElementById('portfolioValue').textContent = '$' + stockValue.toLocaleString('en-US', {minimumFractionDigits: 2});
+  
   const totalValue = localPortfolio.cash + stockValue;
   const profit = totalValue - 10000;
   const returnPercent = (profit / 10000) * 100;
+  
   const pnlEl = document.getElementById('portfolioPnL');
   pnlEl.textContent = `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${returnPercent.toFixed(2)}%)`;
   pnlEl.className = profit >= 0 ? 'up' : 'down';
 
   const ctx = document.getElementById('diversificationChart');
   if (ctx) {
+    // Если все активы по нулям (загружаются), диаграмма покажет только кэш
     if (pieChart) {
       pieChart.data.labels = pieData.map(d => d.label);
       pieChart.data.datasets[0].data = pieData.map(d => d.value);
@@ -151,7 +184,6 @@ function updatePortfolioUI() {
   }
 }
 
-// АВТОРИЗАЦИЯ И ПРОФИЛЬ
 function openProfile() {
   if (!currentUser) return;
   document.getElementById('profUsername').textContent = currentUser.username;
@@ -190,11 +222,7 @@ function login() {
     });
 }
 
-function logout() { 
-  currentUser = null; 
-  localStorage.removeItem('currentUser'); 
-  checkAuth(); 
-}
+function logout() { currentUser = null; localStorage.removeItem('currentUser'); checkAuth(); }
 
 function checkAuth() {
   if (currentUser) {
@@ -212,7 +240,6 @@ function syncPortfolio() {
   fetch('/api/update-portfolio', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email: currentUser.email, portfolio: localPortfolio, returnPercent: calcReturnPercent() }) });
 }
 
-// ОСТАЛЬНЫЕ ФУНКЦИИ (Графики, Новости, Сделки)
 async function loadMainChart(type) {
   const el = document.getElementById('mainChart'); el.innerHTML = ''; if (mainChart) mainChart.destroy();
   try {
@@ -281,7 +308,11 @@ function executeTrade(type) {
     localPortfolio.history.push({ date: new Date().toISOString(), type: 'SELL', symbol: currentMainSymbol, shares, price, total: totalCost });
     if (localPortfolio.holdings[currentMainSymbol].shares === 0) delete localPortfolio.holdings[currentMainSymbol];
   }
-  localStorage.setItem('portfolio', JSON.stringify(localPortfolio)); closeModal('tradeModal'); updatePortfolioUI(); syncPortfolio();
+  localStorage.setItem('portfolio', JSON.stringify(localPortfolio)); 
+  closeModal('tradeModal'); 
+  fetchPortfolioQuotes(); // <-- Запрашиваем цену купленной акции
+  updatePortfolioUI(); 
+  syncPortfolio();
 }
 
 function exportCSV() {
@@ -362,8 +393,14 @@ async function loadMiniChart(symbol) {
 }
 
 window.onload = async () => {
-  checkAuth(); allStocks = await fetch('/api/watchlist').then(r=>r.json());
-  loadNews(); loadHeatmap(); loadMainStock('AAPL', 'Apple Inc.'); updatePortfolioUI(); renderFavorites();
+  checkAuth(); 
+  allStocks = await fetch('/api/watchlist').then(r=>r.json());
+  loadNews(); loadHeatmap(); loadMainStock('AAPL', 'Apple Inc.'); 
+  
+  // 🔥 Загружаем цены для портфеля при старте
+  await fetchPortfolioQuotes();
+  updatePortfolioUI(); 
+  renderFavorites();
 
   const container = document.getElementById('watchlistContainer');
   for (let i = 0; i < allStocks.length; i++) {
