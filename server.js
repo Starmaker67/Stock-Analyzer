@@ -22,21 +22,15 @@ if (fs.existsSync(DB_FILE)) { try { db = JSON.parse(fs.readFileSync(DB_FILE, 'ut
 else { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
 const saveDB = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 
-// СПИСОК ИЗ 100 АКЦИЙ
+// СПИСОК ИЗ 100 АКЦИЙ (для интерфейса)
 const WATCHLIST = [
-  // Tech (30)
   'AAPL','MSFT','NVDA','TSLA','AMZN','GOOGL','META','AMD','NFLX','DIS',
   'ADBE','CRM','ORCL','IBM','QCOM','TXN','AVGO','MU','AMAT','SBUX',
   'INTC','CSCO','PYPL','SNOW','CRWD','PANW','NOW','WDAY','TEAM','DDOG',
-  // Finance (15)
   'JPM','V','MA','BAC','WFC','C','GS','MS','AXP','BLK','SCHW','USB','PNC','COF','BK',
-  // Healthcare (15)
   'JNJ','UNH','PFE','ABBV','MRK','TMO','ABT','DHR','BMY','AMGN','GILD','CVS','MDT','LLY','ZTS',
-  // Consumer (15)
   'WMT','KO','PEP','COST','MCD','NKE','PG','HD','LOW','TGT','TJX','DG','DLTR','EL','CL',
-  // Energy & Industrial (15)
   'XOM','CVX','COP','SLB','BA','CAT','DE','GE','MMM','HON','UNP','UPS','LMT','RTX','LUV',
-  // Comm & Others (10)
   'T','VZ','CMCSA','TMUS','CHTR','SPOT','UBER','LYFT','ABNB','BKNG'
 ];
 
@@ -62,7 +56,6 @@ const COMPANY_NAMES = {
   'T':'AT&T','VZ':'Verizon','CMCSA':'Comcast','TMUS':'T-Mobile','CHTR':'Charter Comm.',
   'SPOT':'Spotify','UBER':'Uber Tech','LYFT':'Lyft Inc.','ABNB':'Airbnb','BKNG':'Booking Holdings'
 };
-
 
 const cache = new Map();
 async function cached(key, ttl, fn) {
@@ -171,7 +164,7 @@ app.get('/api/heatmap', async (req, res) => { res.json(await getHeatmap()); });
 app.get('/api/news', async (req, res) => { res.json(await getNews()); });
 app.get('/api/watchlist', (req, res) => { res.json(WATCHLIST.map(sym => ({ symbol: sym, name: COMPANY_NAMES[sym] || sym }))); });
 
-// РЕГИСТРАЦИЯ И АВТОРИЗАЦИЯ ПО EMAIL
+// АВТОРИЗАЦИЯ
 app.post('/api/auth/register', (req, res) => {
   const { email, password, username } = req.body;
   if (!email || !password || !username) return res.status(400).json({ error: 'Заполните все поля' });
@@ -206,6 +199,7 @@ app.get('/api/leaderboard', (req, res) => {
   res.json(sorted.slice(0, 10));
 });
 
+// WEBSOCKET
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 const clients = new Set();
@@ -215,8 +209,9 @@ function connectFinnhub() {
   const ws = new WebSocket(`wss://ws.finnhub.io?token=${FINNHUB_KEY}`);
   ws.on('open', () => {
     console.log('✅ Подключено к Finnhub WS');
-    // Подписываемся с задержкой в 50мс, чтобы не превысить лимиты Finnhub
-    WATCHLIST.forEach((s, index) => {
+    // ФИКС: подписываемся только на первые 50 акций (лимит бесплатного тарифа)
+    const symbolsToSubscribe = WATCHLIST.slice(0, 50);
+    symbolsToSubscribe.forEach((s, index) => {
       setTimeout(() => {
         ws.send(JSON.stringify({ type: 'subscribe', symbol: s }));
       }, index * 50);
@@ -229,3 +224,4 @@ function connectFinnhub() {
   ws.on('close', () => setTimeout(connectFinnhub, 3000));
   ws.on('error', (e) => console.error('Finnhub WS Error:', e.message));
 }
+server.listen(PORT, '0.0.0.0', () => { console.log(`🚀 Server on ${PORT}`); connectFinnhub(); });

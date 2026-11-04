@@ -33,16 +33,22 @@ ws.onmessage = (e) => {
   }, 1000);
 };
 
-// app.js
 function switchTab(tabId, btn) {
-  // ... (ваш существующий код)
+  // Восстановлено: переключение вкладок
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + tabId).classList.add('active');
+  if (btn) btn.classList.add('active');
+  
   if (tabId === 'leaderboard') loadLeaderboard();
   if (tabId === 'favorites') renderFavorites();
   if (tabId === 'portfolio') {
-    // ФИКС: Сначала ждем загрузки цен, потом обновляем UI
-    fetchPortfolioQuotes().then(() => updatePortfolioUI());
+    // Сначала показываем старые данные, затем загружаем новые
+    updatePortfolioUI();
+    fetchPortfolioQuotes();
   }
 }
+
 // ГЛАВНЫЙ ЭКРАН
 async function loadMainStock(symbol, name) {
   currentMainSymbol = symbol;
@@ -91,10 +97,8 @@ async function loadMainStock(symbol, name) {
   } catch(e) { console.error(e); }
 }
 
-// 🔥 НОВАЯ ФУНКЦИЯ: Загружает цены для активов в портфеле
-// app.js
-let isFetchingQuotes = false; // Флаг для защиты от параллельных запросов
-
+// ЗАГРУЗКА ЦЕН ДЛЯ ПОРТФЕЛЯ
+let isFetchingQuotes = false;
 async function fetchPortfolioQuotes() {
   if (isFetchingQuotes) return;
   const holdings = Object.keys(localPortfolio.holdings);
@@ -105,7 +109,6 @@ async function fetchPortfolioQuotes() {
   
   for (const sym of holdings) {
     try {
-      // Всегда запрашиваем свежую цену с сервера (для всех акций портфеля)
       const q = await fetch('/api/quote/' + sym).then(r => r.json());
       if (q && q.price) {
         allQuotes[sym] = q;
@@ -117,6 +120,7 @@ async function fetchPortfolioQuotes() {
   isFetchingQuotes = false;
   if (updated) updatePortfolioUI();
 }
+
 function calcReturnPercent() {
   let stockValue = 0;
   for (const [sym, data] of Object.entries(localPortfolio.holdings)) {
@@ -129,7 +133,6 @@ function calcReturnPercent() {
 
 function updatePortfolioUI() {
   document.getElementById('cashBalance').textContent = '$' + localPortfolio.cash.toLocaleString('en-US', {minimumFractionDigits: 2});
-  
   let stockValue = 0;
   const tbody = document.querySelector('#holdingsTable tbody');
   if (!tbody) return;
@@ -155,18 +158,15 @@ function updatePortfolioUI() {
   }
 
   document.getElementById('portfolioValue').textContent = '$' + stockValue.toLocaleString('en-US', {minimumFractionDigits: 2});
-  
   const totalValue = localPortfolio.cash + stockValue;
   const profit = totalValue - 10000;
   const returnPercent = (profit / 10000) * 100;
-  
   const pnlEl = document.getElementById('portfolioPnL');
   pnlEl.textContent = `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${returnPercent.toFixed(2)}%)`;
   pnlEl.className = profit >= 0 ? 'up' : 'down';
 
   const ctx = document.getElementById('diversificationChart');
   if (ctx) {
-    // Если все активы по нулям (загружаются), диаграмма покажет только кэш
     if (pieChart) {
       pieChart.data.labels = pieData.map(d => d.label);
       pieChart.data.datasets[0].data = pieData.map(d => d.value);
@@ -181,6 +181,7 @@ function updatePortfolioUI() {
   }
 }
 
+// ПРОФИЛЬ
 function openProfile() {
   if (!currentUser) return;
   document.getElementById('profUsername').textContent = currentUser.username;
@@ -237,6 +238,7 @@ function syncPortfolio() {
   fetch('/api/update-portfolio', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email: currentUser.email, portfolio: localPortfolio, returnPercent: calcReturnPercent() }) });
 }
 
+// ГРАФИКИ
 async function loadMainChart(type) {
   const el = document.getElementById('mainChart'); el.innerHTML = ''; if (mainChart) mainChart.destroy();
   try {
@@ -307,7 +309,7 @@ function executeTrade(type) {
   }
   localStorage.setItem('portfolio', JSON.stringify(localPortfolio)); 
   closeModal('tradeModal'); 
-  fetchPortfolioQuotes(); // <-- Запрашиваем цену купленной акции
+  fetchPortfolioQuotes(); // Запрашиваем цену купленной акции
   updatePortfolioUI(); 
   syncPortfolio();
 }
@@ -389,9 +391,8 @@ async function loadMiniChart(symbol) {
   } catch(e) {}
 }
 
-// app.js
-let portfolioTimer = null; // Храним ID таймера
-
+// ИНИЦИАЛИЗАЦИЯ
+let portfolioTimer = null;
 window.onload = async () => {
   checkAuth(); 
   allStocks = await fetch('/api/watchlist').then(r=>r.json());
@@ -401,12 +402,20 @@ window.onload = async () => {
   updatePortfolioUI(); 
   renderFavorites();
 
-  // ФИКС: Очищаем старый таймер, если он был, и запускаем новый
+  // Фоновое обновление цен портфеля раз в 30 секунд
   if (portfolioTimer) clearInterval(portfolioTimer);
-  portfolioTimer = setInterval(fetchPortfolioQuotes, 30000); // Раз в 30 секунд
+  portfolioTimer = setInterval(fetchPortfolioQuotes, 30000);
 
   const container = document.getElementById('watchlistContainer');
-  // ... остальной код for-loop
+  for (let i = 0; i < allStocks.length; i++) {
+    if (i < 12) { await createCard(allStocks[i], container); } 
+    else {
+      const div = document.createElement('div'); div.className = 'watchlist-item hidden'; div.id = 'card-' + allStocks[i].symbol;
+      div.onclick = () => { loadMainStock(allStocks[i].symbol, allStocks[i].name); switchTab('dashboard', document.querySelector('.tab-btn')); window.scrollTo(0,0); };
+      div.innerHTML = `<div class="wl-header"><div><div class="wl-symbol">${allStocks[i].symbol}</div><div class="wl-company">${allStocks[i].name}</div></div><div><div class="wl-price" id="wl-price-${allStocks[i].symbol}">—</div><div class="wl-change" id="wl-change-${allStocks[i].symbol}">—</div></div></div><div class="wl-chart" id="wl-chart-${allStocks[i].symbol}"></div>`;
+      container.appendChild(div);
+    }
+  }
 };
 
 function showMoreStocks() {
