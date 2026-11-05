@@ -322,29 +322,35 @@ function exportCSV() {
 
 async function loadLeaderboard() {
   try {
-    const users = await fetch('/api/leaderboard').then(r => r.json());
+    const response = await fetch('/api/leaderboard');
+    if (!response.ok) throw new Error('Network response was not ok');
+    const users = await response.json();
     const tbody = document.querySelector('#leaderboardTable tbody');
     
     if (!users || users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Пока нет инвесторов. Совершите первую сделку, чтобы попасть в топ!</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Пока нет инвесторов. Совершите сделку, чтобы попасть в топ!</td></tr>';
       return;
     }
 
-    tbody.innerHTML = users.map((u, i) => {
+    let html = '';
+    users.forEach((u, i) => {
       const isMe = currentUser && u.email === currentUser.email;
       const rowStyle = isMe ? 'background: rgba(88, 166, 255, 0.1); font-weight: bold;' : '';
-      const returnClass = u.returnPercent >= 0 ? 'up' : 'down';
-      
-      return `<tr style="${rowStyle}">
+      const returnClass = u.return_percent >= 0 ? 'up' : 'down';
+      const badges = u.badges && Array.isArray(u.badges) ? u.badges.join(' ') : '—';
+      const percent = u.return_percent ? u.return_percent.toFixed(2) : '0.00';
+
+      html += `<tr style="${rowStyle}">
         <td>#${i+1}</td>
         <td>${u.username} ${isMe ? '(Вы)' : ''}</td>
-        <td class="${returnClass}">${u.returnPercent > 0 ? '+' : ''}${u.returnPercent.toFixed(2)}%</td>
-        <td>${u.badges.length ? u.badges.join(' ') : '—'}</td>
+        <td class="${returnClass}">${percent > 0 ? '+' : ''}${percent}%</td>
+        <td>${badges}</td>
       </tr>`;
-    }).join('');
+    });
+    tbody.innerHTML = html;
   } catch(e) {
     console.error('Leaderboard error:', e);
-    document.querySelector('#leaderboardTable tbody').innerHTML = '<tr><td colspan="4">Ошибка загрузки рейтинга</td></tr>';
+    document.querySelector('#leaderboardTable tbody').innerHTML = '<tr><td colspan="4" style="text-align:center; color:red;">Ошибка загрузки рейтинга</td></tr>';
   }
 }
 
