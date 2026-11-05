@@ -321,8 +321,31 @@ function exportCSV() {
 }
 
 async function loadLeaderboard() {
-  const users = await fetch('/api/leaderboard').then(r => r.json());
-  document.querySelector('#leaderboardTable tbody').innerHTML = users.map((u, i) => `<tr><td>#${i+1}</td><td>${u.username} ${currentUser && u.email === currentUser.email ? '(Вы)' : ''}</td><td class="${u.returnPercent >= 0 ? 'up' : 'down'}">${u.returnPercent > 0 ? '+' : ''}${u.returnPercent.toFixed(2)}%</td><td>${u.badges.join(' ')}</td></tr>`).join('');
+  try {
+    const users = await fetch('/api/leaderboard').then(r => r.json());
+    const tbody = document.querySelector('#leaderboardTable tbody');
+    
+    if (!users || users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Пока нет инвесторов. Совершите первую сделку, чтобы попасть в топ!</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = users.map((u, i) => {
+      const isMe = currentUser && u.email === currentUser.email;
+      const rowStyle = isMe ? 'background: rgba(88, 166, 255, 0.1); font-weight: bold;' : '';
+      const returnClass = u.returnPercent >= 0 ? 'up' : 'down';
+      
+      return `<tr style="${rowStyle}">
+        <td>#${i+1}</td>
+        <td>${u.username} ${isMe ? '(Вы)' : ''}</td>
+        <td class="${returnClass}">${u.returnPercent > 0 ? '+' : ''}${u.returnPercent.toFixed(2)}%</td>
+        <td>${u.badges.length ? u.badges.join(' ') : '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    console.error('Leaderboard error:', e);
+    document.querySelector('#leaderboardTable tbody').innerHTML = '<tr><td colspan="4">Ошибка загрузки рейтинга</td></tr>';
+  }
 }
 
 async function loadHeatmap() {
@@ -401,6 +424,8 @@ window.onload = async () => {
   await fetchPortfolioQuotes();
   updatePortfolioUI(); 
   renderFavorites();
+
+  if (currentUser) syncPortfolio();
 
   // Фоновое обновление цен портфеля раз в 30 секунд
   if (portfolioTimer) clearInterval(portfolioTimer);

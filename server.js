@@ -7,22 +7,21 @@ const WebSocket = require('ws');
 const Parser = require('rss-parser');
 const { RSI, MACD, SMA } = require('technicalindicators');
 const path = require('path');
-const fs = require('fs');
+const { createClient } = require('@supabase/supabase-js');
 
 const FINNHUB_KEY = process.env.FINNHUB_KEY;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const BASE = 'https://finnhub.io/api/v1';
 const PORT = process.env.PORT || 4000;
 
-if (!FINNHUB_KEY) { console.error('❌ Нет FINNHUB_KEY'); process.exit(1); }
+if (!FINNHUB_KEY || !SUPABASE_URL || !SUPABASE_KEY) { 
+  console.error('❌ Нет переменных окружения (FINNHUB_KEY, SUPABASE_URL, SUPABASE_KEY)'); 
+  process.exit(1); 
+}
 
-// БАЗА ДАННЫХ
-const DB_FILE = path.join(__dirname, 'db.json');
-let db = { users: [] };
-if (fs.existsSync(DB_FILE)) { try { db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) {} } 
-else { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
-const saveDB = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// СПИСОК ИЗ 100 АКЦИЙ (для интерфейса)
 const WATCHLIST = [
   'AAPL','MSFT','NVDA','TSLA','AMZN','GOOGL','META','AMD','NFLX','DIS',
   'ADBE','CRM','ORCL','IBM','QCOM','TXN','AVGO','MU','AMAT','SBUX',
@@ -164,39 +163,47 @@ app.get('/api/heatmap', async (req, res) => { res.json(await getHeatmap()); });
 app.get('/api/news', async (req, res) => { res.json(await getNews()); });
 app.get('/api/watchlist', (req, res) => { res.json(WATCHLIST.map(sym => ({ symbol: sym, name: COMPANY_NAMES[sym] || sym }))); });
 
-// АВТОРИЗАЦИЯ
-app.post('/api/auth/register', (req, res) => {
+// АВТОРИЗАЦИЯ И БД (SUPABASE)
+app.post('/api/auth/register', async (req, res) => {
   const { email, password, username } = req.body;
   if (!email || !password || !username) return res.status(400).json({ error: 'Заполните все поля' });
-  if (db.users.find(u => u.email === email)) return res.status(400).json({ error: 'Этот Email уже занят' });
-  
-  const newUser = { email, password, username, portfolio: { cash: 10000, holdings: {}, history: [] }, returnPercent: 0, badges: [] };
-  db.users.push(newUser); saveDB();
-  res.json(newUser);
+
+  const { data: existing } = await supabase.from('users').select('*').eq('email', email).single();
+  if (existing) return res.status(400).json({ error: 'Этот Email уже занят' });
+
+  const { data, error } = await supabase.from('users').insert([{ email, password, username }]).select().single();
+  if (error) return res.status(500).json({ error: 'Ошибка регистрации' });
+  res.json(data);
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  const user = db.users.find(u => u.email === email && u.password === password);
-  if (!user) return res.status(400).json({ error: 'Неверный Email или пароль' });
-  res.json(user);
+  const { data, error } = await supabase.from('users').select('*').eq('email', email).eq('password', password).single();
+  if (error || !data) return res.status(400).json({ error: 'Неверный Email или пароль' });
+  res.json(data);
 });
 
-app.post('/api/update-portfolio', (req, res) => {
+app.post('/api/update-portfolio', async (req, res) => {
   const { email, portfolio, returnPercent } = req.body;
-  const user = db.users.find(u => u.email === email);
+  const { data: user } = await supabase.from('users').select('*').eq('email', email).single();
+  
   if (user) {
-    user.portfolio = portfolio; user.returnPercent = returnPercent;
-    if (returnPercent > 50 && !user.badges.includes('🐺 Волк с Уолл-Стрит')) user.badges.push('🐺 Волк с Уолл-Стрит');
-    if (returnPercent > 10 && !user.badges.includes('📈 Первая прибыль')) user.badges.push('📈 Первая прибыль');
-    saveDB();
+    let badges = user.badges || [];
+    if (returnPercent > 50 && !badges.includes('🐺 Волк с Уолл-Стрит')) badges.push('🐺 Волк с Уолл-Стрит');
+    if (returnPercent > 10 && !badges.includes('📈 Первая прибыль')) badges.push('📈 Первая прибыль');
+
+    await supabase.from('users').update({ 
+      portfolio: portfolio, 
+      return_percent: returnPercent,
+      badges: badges
+    }).eq('email', email);
   }
   res.json({ success: true });
 });
 
-app.get('/api/leaderboard', (req, res) => {
-  const sorted = [...db.users].sort((a, b) => b.returnPercent - a.returnPercent);
-  res.json(sorted.slice(0, 10));
+app.get('/api/leaderboard', async (req, res) => {
+  const { data } = await supabase.from('users').select('*').order('return_percent', { ascending: false }).limit(10);
+  res.json(data || []);
 });
 
 // WEBSOCKET
@@ -208,19 +215,12 @@ function broadcast(p) { const msg = JSON.stringify(p); clients.forEach(c => { if
 function connectFinnhub() {
   const ws = new WebSocket(`wss://ws.finnhub.io?token=${FINNHUB_KEY}`);
   ws.on('open', () => {
-    console.log('✅ Подключено к Finnhub WS');
-    // ФИКС: подписываемся только на первые 50 акций (лимит бесплатного тарифа)
     const symbolsToSubscribe = WATCHLIST.slice(0, 50);
     symbolsToSubscribe.forEach((s, index) => {
-      setTimeout(() => {
-        ws.send(JSON.stringify({ type: 'subscribe', symbol: s }));
-      }, index * 50);
+      setTimeout(() => { ws.send(JSON.stringify({ type: 'subscribe', symbol: s })); }, index * 50);
     });
   });
-  ws.on('message', (raw) => { 
-    const m = JSON.parse(raw); 
-    if (m.type === 'trade') m.data.forEach(t => broadcast({ symbol: t.s, price: t.p })); 
-  });
+  ws.on('message', (raw) => { const m = JSON.parse(raw); if (m.type === 'trade') m.data.forEach(t => broadcast({ symbol: t.s, price: t.p })); });
   ws.on('close', () => setTimeout(connectFinnhub, 3000));
   ws.on('error', (e) => console.error('Finnhub WS Error:', e.message));
 }
