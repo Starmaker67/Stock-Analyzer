@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>StarStocks</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -112,10 +112,13 @@
       <div class="actions-wrapper"><button class="btn-primary" onclick="exportCSV()">📥 Скачать CSV</button></div>
     </div>
     <h3>Ваши активы</h3>
-    <table class="portfolio-table" id="holdingsTable">
-      <thead><tr><th>Тикер</th><th>Кол-во</th><th>Ср. цена</th><th>Тек. цена</th><th>Стоимость</th><th>P&L</th><th>Действие</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <!-- Обернули таблицу для мобильной прокрутки -->
+    <div class="table-responsive">
+      <table class="portfolio-table" id="holdingsTable">
+        <thead><tr><th>Тикер</th><th>Кол-во</th><th>Ср. цена</th><th>Тек. цена</th><th>Стоимость</th><th>P&L</th><th>Действие</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 
   <!-- ИЗБРАННОЕ -->
@@ -127,10 +130,12 @@
   <!-- ЛИДЕРБОРД -->
   <div id="tab-leaderboard" class="tab-content">
     <h2>🏆 Топ инвесторов</h2>
-    <table class="portfolio-table" id="leaderboardTable">
-      <thead><tr><th>Место</th><th>Инвестор</th><th>Доходность</th><th>Достижения</th></tr></thead>
-      <tbody></tbody>
-    </table>
+    <div class="table-responsive">
+      <table class="portfolio-table" id="leaderboardTable">
+        <thead><tr><th>Место</th><th>Инвестор</th><th>Доходность</th><th>Достижения</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 
   <!-- МОДАЛКИ -->
@@ -144,7 +149,6 @@
     </div>
   </div>
 
-  <!-- ОБНОВЛЕННАЯ МОДАЛКА АВТОРИЗАЦИИ -->
   <div id="authModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeModal('authModal')">&times;</span>
