@@ -168,19 +168,54 @@ app.post('/api/auth/register', async (req, res) => {
   const { email, password, username } = req.body;
   if (!email || !password || !username) return res.status(400).json({ error: 'Заполните все поля' });
 
-  const { data: existing } = await supabase.from('users').select('*').eq('email', email).single();
-  if (existing) return res.status(400).json({ error: 'Этот Email уже занят' });
+  try {
+    // Проверяем, есть ли уже такой пользователь (maybeSingle не выдает ошибку, если никого нет)
+    const { data: existing, error: findError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
 
-  const { data, error } = await supabase.from('users').insert([{ email, password, username }]).select().single();
-  if (error) return res.status(500).json({ error: 'Ошибка регистрации' });
-  res.json(data);
+    if (findError) throw findError;
+    if (existing) return res.status(400).json({ error: 'Этот Email уже занят' });
+
+    // Создаем нового пользователя
+    const { data, error } = await supabase
+      .from('users')
+      .insert([{ email, password, username }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('ОШИБКА SUPABASE (INSERT):', error);
+      return res.status(500).json({ error: 'Ошибка БД: ' + error.message });
+    }
+    
+    res.json(data);
+  } catch (err) {
+    console.error('ОШИБКА СЕРВЕРА (REGISTER):', err);
+    res.status(500).json({ error: err.message || 'Внутренняя ошибка сервера' });
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  const { data, error } = await supabase.from('users').select('*').eq('email', email).eq('password', password).single();
-  if (error || !data) return res.status(400).json({ error: 'Неверный Email или пароль' });
-  res.json(data);
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .eq('password', password)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return res.status(400).json({ error: 'Неверный Email или пароль' });
+    
+    res.json(data);
+  } catch (err) {
+    console.error('ОШИБКА СЕРВЕРА (LOGIN):', err);
+    res.status(500).json({ error: 'Ошибка входа: ' + err.message });
+  }
 });
 
 app.post('/api/update-portfolio', async (req, res) => {
