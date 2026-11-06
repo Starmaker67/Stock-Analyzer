@@ -185,9 +185,14 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/update-portfolio', async (req, res) => {
   const { email, portfolio, returnPercent } = req.body;
-  const { data: user } = await supabase.from('users').select('*').eq('email', email).single();
-  
-  if (user) {
+  try {
+    const { data: user, error } = await supabase.from('users').select('*').eq('email', email).single();
+    
+    // Проверка: если юзер не найден, не падаем, а возвращаем ошибку
+    if (!user || error) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+
     let badges = user.badges || [];
     if (returnPercent > 50 && !badges.includes('🐺 Волк с Уолл-Стрит')) badges.push('🐺 Волк с Уолл-Стрит');
     if (returnPercent > 10 && !badges.includes('📈 Первая прибыль')) badges.push('📈 Первая прибыль');
@@ -197,8 +202,11 @@ app.post('/api/update-portfolio', async (req, res) => {
       return_percent: returnPercent,
       badges: badges
     }).eq('email', email);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  res.json({ success: true });
 });
 
 app.get('/api/leaderboard', async (req, res) => {
@@ -217,7 +225,7 @@ function connectFinnhub() {
   ws.on('open', () => {
     const symbolsToSubscribe = WATCHLIST.slice(0, 50);
     symbolsToSubscribe.forEach((s, index) => {
-      setTimeout(() => { ws.send(JSON.stringify({ type: 'subscribe', symbol: s })); }, index * 50);
+      setTimeout(() => { ws.send(JSON.stringify({ type: 'subscribe', symbol: s })); }, index * 100);
     });
   });
   ws.on('message', (raw) => { const m = JSON.parse(raw); if (m.type === 'trade') m.data.forEach(t => broadcast({ symbol: t.s, price: t.p })); });
