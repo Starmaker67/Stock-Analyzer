@@ -267,4 +267,19 @@ function connectFinnhub() {
   ws.on('close', () => setTimeout(connectFinnhub, 3000));
   ws.on('error', (e) => console.error('Finnhub WS Error:', e.message));
 }
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .insert([{ email: 'test@test.com', password: '123', username: 'TestUser' }])
+      .select();
+      
+    if (error) {
+      return res.status(500).json({ source: 'Supabase Error', message: error.message, details: error.details });
+    }
+    res.json({ success: true, message: 'База данных работает!', data });
+  } catch (err) {
+    res.status(500).json({ source: 'Server Error', message: err.message });
+  }
+});
 server.listen(PORT, '0.0.0.0', () => { console.log(`🚀 Server on ${PORT}`); connectFinnhub(); });
