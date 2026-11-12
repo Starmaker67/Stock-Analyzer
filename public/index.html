@@ -4,23 +4,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>StarStocks</title>
-   <link rel="icon" type="image/png" href="logo.png">
+  <link rel="icon" type="image/png" href="logo.png">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="top-bar">
-    <div class="logo">
-  <img src="logo.png" alt="StarStocks Logo">
-  StarStocks
-</div>
+    <div class="logo"><img src="logo.png" alt="Logo"> StarStocks</div>
     <div class="search-container">
-      <input type="text" id="symbolInput" placeholder="Поиск (напр. App...)" autocomplete="off">
+      <input type="text" id="symbolInput" placeholder="Поиск (AAPL, SBER, BTC...)" autocomplete="off">
       <div id="autocompleteList" class="autocomplete-items"></div>
     </div>
     <div class="nav-tabs">
       <button class="tab-btn active" onclick="switchTab('dashboard', this)">Терминал</button>
       <button class="tab-btn" onclick="switchTab('portfolio', this)">Портфель</button>
+      <button class="tab-btn" onclick="switchTab('orders', this)">Ордера</button>
       <button class="tab-btn" onclick="switchTab('favorites', this)">Избранное</button>
       <button class="tab-btn" onclick="switchTab('leaderboard', this)">Топ</button>
     </div>
@@ -49,13 +47,12 @@
             </div>
           </div>
           
-          <div class="fair-value-box" id="fairValueBox"></div>
-          
           <div class="chart-controls">
             <button class="btn-small" onclick="loadMainChart('price')">График Цены</button>
             <button class="btn-small" onclick="loadMainChart('pe')">Динамика P/E</button>
             <button class="btn-small btn-buy" onclick="openTradeModal('buy')">Купить</button>
             <button class="btn-small btn-sell" onclick="openTradeModal('sell')">Продать</button>
+            <button class="btn-small" onclick="openLimitModal()">Лимит</button>
             <button class="btn-small btn-star" id="mainStarBtn" onclick="toggleFavorite(currentMainSymbol)">★</button>
           </div>
           
@@ -63,40 +60,21 @@
         </div>
         
         <div class="analysis-grid">
-          <div class="analysis-card">
-            <h3>Фундаментальный</h3>
-            <div id="fundamentalData"></div>
-          </div>
-          <div class="analysis-card">
-            <h3>Технический</h3>
-            <div id="technicalData"></div>
-          </div>
-          <div class="analysis-card radar-card">
-            <h3>Радар</h3>
-            <div id="gaugeContainer" style="height: 150px;"></div>
-            <h3 id="radarVerdict" style="text-align:center; margin-top:5px;"></h3>
-          </div>
+          <div class="analysis-card"><h3>Фундаментальный</h3><div id="fundamentalData"></div></div>
+          <div class="analysis-card"><h3>Технический</h3><div id="technicalData"></div></div>
+          <div class="analysis-card radar-card"><h3>Радар</h3><div id="gaugeContainer" style="height: 150px;"></div><h3 id="radarVerdict" style="text-align:center; margin-top:5px;"></h3></div>
         </div>
       </div>
 
       <div class="side-column">
-        <div class="news-panel">
-          <h3>Новости</h3>
-          <div id="newsList" class="skeleton-container"></div>
-        </div>
-        <div class="heatmap-panel">
-          <h3>Тепловая карта</h3>
-          <div id="heatmapContainer" class="heatmap-grid"></div>
-        </div>
+        <div class="news-panel"><h3>Новости</h3><div id="newsList" class="skeleton-container"></div></div>
       </div>
     </div>
 
     <div class="watchlist-section">
       <h2>Популярные акции</h2>
       <div class="watchlist-grid" id="watchlistContainer"></div>
-      <div class="show-more-container">
-        <button class="show-more-btn" id="showMoreBtn" onclick="showMoreStocks()">Показать еще 12</button>
-      </div>
+      <div class="show-more-container"><button class="show-more-btn" id="showMoreBtn" onclick="showMoreStocks()">Показать еще 12</button></div>
     </div>
   </div>
 
@@ -109,17 +87,25 @@
     </div>
     
     <div class="portfolio-charts">
-      <div class="chart-wrapper">
-        <h3 style="margin-top:0;">Диверсификация</h3>
-        <div class="canvas-container"><canvas id="diversificationChart"></canvas></div>
-      </div>
+      <div class="chart-wrapper"><h3 style="margin-top:0;">Диверсификация</h3><div class="canvas-container"><canvas id="diversificationChart"></canvas></div></div>
       <div class="actions-wrapper"><button class="btn-primary" onclick="exportCSV()">📥 Скачать CSV</button></div>
     </div>
+    
     <h3>Ваши активы</h3>
-    <!-- Обернули таблицу для мобильной прокрутки -->
     <div class="table-responsive">
       <table class="portfolio-table" id="holdingsTable">
         <thead><tr><th>Тикер</th><th>Кол-во</th><th>Ср. цена</th><th>Тек. цена</th><th>Стоимость</th><th>P&L</th><th>Действие</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ОРДЕРА -->
+  <div id="tab-orders" class="tab-content">
+    <h2>Активные лимитные заявки</h2>
+    <div class="table-responsive">
+      <table class="portfolio-table" id="ordersTable">
+        <thead><tr><th>Дата</th><th>Тикер</th><th>Тип</th><th>Кол-во</th><th>Цена срабатывания</th><th>Статус</th><th>Действие</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -153,6 +139,21 @@
     </div>
   </div>
 
+  <div id="limitModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('limitModal')">&times;</span>
+      <h2>Лимитная заявка</h2>
+      <p>Тикер: <b id="limitSymbol"></b></p>
+      <select id="limitType" style="width:100%; padding:10px; margin-bottom:10px; background:var(--bg); color:#fff; border:1px solid var(--border);">
+        <option value="buy">Купить (если цена упадет)</option>
+        <option value="sell">Продать (если цена вырастет)</option>
+      </select>
+      <input type="number" id="limitTargetPrice" placeholder="Целевая цена ($)">
+      <input type="number" id="limitShares" placeholder="Количество акций" min="1">
+      <button class="btn-primary" onclick="submitLimitOrder()">Создать заявку</button>
+    </div>
+  </div>
+
   <div id="authModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeModal('authModal')">&times;</span>
@@ -160,7 +161,6 @@
       <input type="email" id="authEmail" placeholder="Email" style="margin-bottom:10px;">
       <input type="password" id="authPassword" placeholder="Пароль" style="margin-bottom:10px;">
       <input type="text" id="authUsername" placeholder="Никнейм (только для регистрации)" style="margin-bottom:10px;">
-      
       <div style="display:flex; gap:10px; margin-top:15px;">
         <button class="btn-primary" onclick="login()" style="flex:1;">Войти</button>
         <button class="btn-primary" onclick="register()" style="flex:1; background:#238636;">Регистрация</button>
