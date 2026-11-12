@@ -110,3 +110,40 @@ input[type="number"], input[type="text"], input[type="email"], input[type="passw
   .show-more-btn { width: 100%; }
   .portfolio-table { min-width: 700px; }
 }
+/* Тепловая карта */
+.heatmap-grid { 
+  display: flex; 
+  flex-wrap: wrap; 
+  gap: 6px; 
+  margin-top: 15px;
+}
+.heat-tile { 
+  flex: 1 1 calc(20% - 6px); /* 5 штук в ряд на десктопе */
+  min-width: 80px;
+  min-height: 70px;
+  padding: 10px 5px; 
+  text-align: center; 
+  border-radius: 6px; 
+  font-size: 12px; 
+  font-weight: bold; 
+  cursor: pointer; 
+  transition: transform 0.2s, box-shadow 0.2s; 
+  display: flex; 
+  flex-direction: column; 
+  justify-content: center;
+  align-items: center;
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.heat-tile:hover { 
+  transform: scale(1.05); 
+  z-index: 10; 
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5); 
+}
+.heat-symbol { font-size: 14px; margin-bottom: 4px; }
+.heat-price { font-size: 11px; opacity: 0.8; margin-top: 2px; }
+
+/* На мобильных по 3 штуки в ряд */
+@media (max-width: 600px) {
+  .heat-tile { flex: 1 1 calc(33.33% - 6px); min-height: 60px; }
+}
