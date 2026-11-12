@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>StarStocks</title>
   <link rel="icon" type="image/png" href="logo.png">
   <link rel="stylesheet" href="style.css">
@@ -12,7 +12,7 @@
   <div class="top-bar">
     <div class="logo"><img src="logo.png" alt="Logo"> StarStocks</div>
     <div class="search-container">
-      <input type="text" id="symbolInput" placeholder="Поиск (AAPL, SBER, SAP.DE...)" autocomplete="off">
+      <input type="text" id="symbolInput" placeholder="Поиск (AAPL, SBER, SAP.DE, BTC...)" autocomplete="off">
       <div id="autocompleteList" class="autocomplete-items"></div>
     </div>
     <div class="nav-tabs">
@@ -57,54 +57,36 @@
         </div>
         
         <div class="analysis-grid">
-          <div class="analysis-card">
-            <h3>Фундаментальный анализ</h3>
-            <div id="fundamentalData"></div>
-          </div>
-          <div class="analysis-card">
-            <h3>Технический анализ</h3>
-            <div id="technicalData"></div>
-          </div>
-          <div class="analysis-card radar-card">
-            <h3>Радар</h3>
-            <div id="gaugeContainer" style="height: 150px;"></div>
-            <h3 id="radarVerdict" style="text-align:center; margin-top:5px;"></h3>
-          </div>
+          <div class="analysis-card"><h3>Фундаментальный</h3><div id="fundamentalData"></div></div>
+          <div class="analysis-card"><h3>Технический</h3><div id="technicalData"></div></div>
+          <div class="analysis-card radar-card"><h3>Радар</h3><div id="gaugeContainer" style="height: 150px;"></div><h3 id="radarVerdict" style="text-align:center; margin-top:5px;"></h3></div>
         </div>
       </div>
 
       <div class="side-column">
         <div class="news-panel"><h3>Новости</h3><div id="newsList" class="skeleton-container"></div></div>
+        <div class="heatmap-panel">
+          <h3>Тепловая карта <span id="heatmapMarketName"></span></h3>
+          <div id="heatmapContainer" class="heatmap-grid"></div>
+        </div>
       </div>
     </div>
-    <!-- Вставьте этот блок перед <div class="watchlist-section"> -->
-<div class="heatmap-panel" style="margin-bottom: 24px;">
-  <h3 style="margin-top:0;">Тепловая карта рынка <span id="heatmapMarketName" style="color:var(--accent);">(США)</span></h3>
-  <div id="heatmapContainer" class="heatmap-grid">
-    <div style="color:#8b949e; width:100%; text-align:center; padding:20px;">Загрузка...</div>
-  </div>
-</div>
 
-    <!-- ВКЛАДКИ РЫНКОВ -->
-   <!-- ... (начало файла без изменений) ... -->
-
-<!-- ВКЛАДКИ РЫНКОВ -->
-<div class="watchlist-section">
-  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:20px; border-bottom:1px solid var(--border); padding-bottom:10px;">
-    <h2 style="margin:0; border:none; padding:0;">Рынки</h2>
-    <div class="market-tabs">
-      <button class="market-btn active" onclick="switchMarket('US', this)">🇺🇸 США</button>
-      <button class="market-btn" onclick="switchMarket('EU', this)">🇪🇺 Европа</button>
-      <button class="market-btn" onclick="switchMarket('RU', this)">🇷🇺 Россия</button>
-      <button class="market-btn" onclick="switchMarket('CRYPTO', this)">🪙 Криптовалюты</button>
-      <button class="market-btn" onclick="switchMarket('FOREX', this)">💱 Валюты</button>
+    <div class="watchlist-section">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:20px; border-bottom:1px solid var(--border); padding-bottom:10px;">
+        <h2 style="margin:0; border:none; padding:0;">Рынки</h2>
+        <div class="market-tabs">
+          <button class="market-btn active" onclick="switchMarket('US', this)">🇺🇸 США</button>
+          <button class="market-btn" onclick="switchMarket('EU', this)">🇪🇺 Европа</button>
+          <button class="market-btn" onclick="switchMarket('RU', this)">🇷🇺 Россия</button>
+          <button class="market-btn" onclick="switchMarket('CRYPTO', this)">🪙 Крипта</button>
+          <button class="market-btn" onclick="switchMarket('FOREX', this)">💱 Валюты</button>
+        </div>
+      </div>
+      <div class="watchlist-grid" id="watchlistContainer"></div>
+      <div class="show-more-container"><button class="show-more-btn" id="showMoreBtn" onclick="showMoreStocks()">Показать еще</button></div>
     </div>
   </div>
-  <div class="watchlist-grid" id="watchlistContainer"></div>
-  <div class="show-more-container"><button class="show-more-btn" id="showMoreBtn" onclick="showMoreStocks()">Показать еще</button></div>
-</div>
-
-<!-- ... (остальной код без изменений) ... -->
 
   <div id="tab-portfolio" class="tab-content">
     <div class="portfolio-header">
