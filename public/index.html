@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>StarStocks</title>
   <link rel="icon" type="image/png" href="logo.png">
   <link rel="stylesheet" href="style.css">
@@ -12,26 +12,24 @@
   <div class="top-bar">
     <div class="logo"><img src="logo.png" alt="Logo"> StarStocks</div>
     <div class="search-container">
-      <input type="text" id="symbolInput" placeholder="Поиск (AAPL, SBER, BTC...)" autocomplete="off">
+      <input type="text" id="symbolInput" placeholder="Поиск (AAPL, SBER, SAP.DE...)" autocomplete="off">
       <div id="autocompleteList" class="autocomplete-items"></div>
     </div>
     <div class="nav-tabs">
       <button class="tab-btn active" onclick="switchTab('dashboard', this)">Терминал</button>
       <button class="tab-btn" onclick="switchTab('portfolio', this)">Портфель</button>
       <button class="tab-btn" onclick="switchTab('orders', this)">Ордера</button>
-      <button class="tab-btn" onclick="switchTab('favorites', this)">Избранное</button>
       <button class="tab-btn" onclick="switchTab('leaderboard', this)">Топ</button>
     </div>
     <div class="user-profile" id="userProfile">
       <button class="btn-small" onclick="openModal('authModal')" id="loginBtn">Войти</button>
       <div id="userInfo" style="display:none;">
-        <span id="displayUsername" style="font-weight:bold; margin-right:10px; cursor:pointer; text-decoration:underline;" onclick="openProfile()"></span>
+        <span id="displayUsername" style="font-weight:bold; margin-right:10px; cursor:pointer;" onclick="openProfile()"></span>
         <button class="btn-small btn-sell" onclick="logout()">Выйти</button>
       </div>
     </div>
   </div>
 
-  <!-- ТЕРМИНАЛ -->
   <div id="tab-dashboard" class="tab-content active">
     <div class="dashboard-layout">
       <div class="main-column">
@@ -49,7 +47,6 @@
           
           <div class="chart-controls">
             <button class="btn-small" onclick="loadMainChart('price')">График Цены</button>
-            <button class="btn-small" onclick="loadMainChart('pe')">Динамика P/E</button>
             <button class="btn-small btn-buy" onclick="openTradeModal('buy')">Купить</button>
             <button class="btn-small btn-sell" onclick="openTradeModal('sell')">Продать</button>
             <button class="btn-small" onclick="openLimitModal()">Лимит</button>
@@ -60,9 +57,19 @@
         </div>
         
         <div class="analysis-grid">
-          <div class="analysis-card"><h3>Фундаментальный</h3><div id="fundamentalData"></div></div>
-          <div class="analysis-card"><h3>Технический</h3><div id="technicalData"></div></div>
-          <div class="analysis-card radar-card"><h3>Радар</h3><div id="gaugeContainer" style="height: 150px;"></div><h3 id="radarVerdict" style="text-align:center; margin-top:5px;"></h3></div>
+          <div class="analysis-card">
+            <h3>Фундаментальный анализ</h3>
+            <div id="fundamentalData"></div>
+          </div>
+          <div class="analysis-card">
+            <h3>Технический анализ</h3>
+            <div id="technicalData"></div>
+          </div>
+          <div class="analysis-card radar-card">
+            <h3>Радар</h3>
+            <div id="gaugeContainer" style="height: 150px;"></div>
+            <h3 id="radarVerdict" style="text-align:center; margin-top:5px;"></h3>
+          </div>
         </div>
       </div>
 
@@ -71,26 +78,31 @@
       </div>
     </div>
 
+    <!-- ВКЛАДКИ РЫНКОВ -->
     <div class="watchlist-section">
-      <h2>Популярные акции</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:20px; border-bottom:1px solid var(--border); padding-bottom:10px;">
+        <h2 style="margin:0; border:none; padding:0;">Популярные акции</h2>
+        <div class="market-tabs">
+          <button class="market-btn active" onclick="switchMarket('US', this)">🇺🇸 США</button>
+          <button class="market-btn" onclick="switchMarket('EU', this)">🇪🇺 Европа</button>
+          <button class="market-btn" onclick="switchMarket('RU', this)">🇷🇺 Россия</button>
+        </div>
+      </div>
       <div class="watchlist-grid" id="watchlistContainer"></div>
-      <div class="show-more-container"><button class="show-more-btn" id="showMoreBtn" onclick="showMoreStocks()">Показать еще 12</button></div>
+      <div class="show-more-container"><button class="show-more-btn" id="showMoreBtn" onclick="showMoreStocks()">Показать еще</button></div>
     </div>
   </div>
 
-  <!-- ПОРТФЕЛЬ -->
   <div id="tab-portfolio" class="tab-content">
     <div class="portfolio-header">
-      <div class="balance-card"><div>Кэш (USD)</div><h2 id="cashBalance">$10,000.00</h2></div>
+      <div class="balance-card"><div>Кэш</div><h2 id="cashBalance">$10,000.00</h2></div>
       <div class="balance-card"><div>Стоимость активов</div><h2 id="portfolioValue">$0.00</h2></div>
       <div class="balance-card"><div>Общая доходность</div><h2 id="portfolioPnL">$0.00 (0%)</h2></div>
     </div>
-    
     <div class="portfolio-charts">
       <div class="chart-wrapper"><h3 style="margin-top:0;">Диверсификация</h3><div class="canvas-container"><canvas id="diversificationChart"></canvas></div></div>
       <div class="actions-wrapper"><button class="btn-primary" onclick="exportCSV()">📥 Скачать CSV</button></div>
     </div>
-    
     <h3>Ваши активы</h3>
     <div class="table-responsive">
       <table class="portfolio-table" id="holdingsTable">
@@ -100,24 +112,16 @@
     </div>
   </div>
 
-  <!-- ОРДЕРА -->
   <div id="tab-orders" class="tab-content">
-    <h2>Активные лимитные заявки</h2>
+    <h2>Лимитные заявки</h2>
     <div class="table-responsive">
       <table class="portfolio-table" id="ordersTable">
-        <thead><tr><th>Дата</th><th>Тикер</th><th>Тип</th><th>Кол-во</th><th>Цена срабатывания</th><th>Статус</th><th>Действие</th></tr></thead>
+        <thead><tr><th>Дата</th><th>Тикер</th><th>Тип</th><th>Кол-во</th><th>Цена</th><th>Статус</th><th>Действие</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
   </div>
 
-  <!-- ИЗБРАННОЕ -->
-  <div id="tab-favorites" class="tab-content">
-    <h2>⭐ Избранные акции</h2>
-    <div class="watchlist-grid" id="favoritesContainer"></div>
-  </div>
-
-  <!-- ЛИДЕРБОРД -->
   <div id="tab-leaderboard" class="tab-content">
     <h2>🏆 Топ инвесторов</h2>
     <div class="table-responsive">
@@ -128,13 +132,12 @@
     </div>
   </div>
 
-  <!-- МОДАЛКИ -->
   <div id="tradeModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeModal('tradeModal')">&times;</span>
       <h2 id="tradeTitle">Сделка</h2>
-      <p>Цена: $<span id="tradePrice"></span></p>
-      <input type="number" id="tradeShares" placeholder="Количество акций" min="1">
+      <p>Цена: <span id="tradePrice"></span></p>
+      <input type="number" id="tradeShares" placeholder="Количество" min="1">
       <button class="btn-primary" onclick="executeTrade()" id="tradeSubmitBtn">Подтвердить</button>
     </div>
   </div>
@@ -144,23 +147,23 @@
       <span class="close" onclick="closeModal('limitModal')">&times;</span>
       <h2>Лимитная заявка</h2>
       <p>Тикер: <b id="limitSymbol"></b></p>
-      <select id="limitType" style="width:100%; padding:10px; margin-bottom:10px; background:var(--bg); color:#fff; border:1px solid var(--border);">
-        <option value="buy">Купить (если цена упадет)</option>
-        <option value="sell">Продать (если цена вырастет)</option>
+      <select id="limitType">
+        <option value="buy">Купить (если упадет)</option>
+        <option value="sell">Продать (если вырастет)</option>
       </select>
-      <input type="number" id="limitTargetPrice" placeholder="Целевая цена ($)">
-      <input type="number" id="limitShares" placeholder="Количество акций" min="1">
-      <button class="btn-primary" onclick="submitLimitOrder()">Создать заявку</button>
+      <input type="number" id="limitTargetPrice" placeholder="Целевая цена">
+      <input type="number" id="limitShares" placeholder="Количество" min="1">
+      <button class="btn-primary" onclick="submitLimitOrder()">Создать</button>
     </div>
   </div>
 
   <div id="authModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeModal('authModal')">&times;</span>
-      <h2>Вход в StarStocks</h2>
-      <input type="email" id="authEmail" placeholder="Email" style="margin-bottom:10px;">
-      <input type="password" id="authPassword" placeholder="Пароль" style="margin-bottom:10px;">
-      <input type="text" id="authUsername" placeholder="Никнейм (только для регистрации)" style="margin-bottom:10px;">
+      <h2>Вход</h2>
+      <input type="email" id="authEmail" placeholder="Email">
+      <input type="password" id="authPassword" placeholder="Пароль">
+      <input type="text" id="authUsername" placeholder="Никнейм">
       <div style="display:flex; gap:10px; margin-top:15px;">
         <button class="btn-primary" onclick="login()" style="flex:1;">Войти</button>
         <button class="btn-primary" onclick="register()" style="flex:1; background:#238636;">Регистрация</button>
@@ -172,12 +175,9 @@
     <div class="modal-content">
       <span class="close" onclick="closeModal('profileModal')">&times;</span>
       <h2>Профиль: <span id="profUsername"></span></h2>
-      <div class="profile-stats">
-        <p><b>Email:</b> <span id="profEmail"></span></p>
-        <p><b>Доходность:</b> <span id="profReturn"></span></p>
-        <p><b>Свободный кэш:</b> <span id="profCash"></span></p>
-        <p><b>Достижения:</b> <span id="profBadges" style="font-size:20px;"></span></p>
-      </div>
+      <p>Email: <span id="profEmail"></span></p>
+      <p>Доходность: <span id="profReturn"></span></p>
+      <p>Кэш: <span id="profCash"></span></p>
     </div>
   </div>
 

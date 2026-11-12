@@ -17,11 +17,22 @@ const PORT = process.env.PORT || 4000;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Списки акций
-const WATCHLIST = ['AAPL','MSFT','NVDA','TSLA','AMZN','GOOGL','META','AMD','NFLX','DIS','ADBE','CRM','ORCL','IBM','QCOM','TXN','AVGO','MU','AMAT','SBUX','INTC','CSCO','PYPL','SNOW','CRWD','PANW','NOW','WDAY','TEAM','DDOG','JPM','V','MA','BAC','WFC','C','GS','MS','AXP','BLK','SCHW','USB','PNC','COF','BK','JNJ','UNH','PFE','ABBV','MRK','TMO','ABT','DHR','BMY','AMGN','GILD','CVS','MDT','LLY','ZTS','WMT','KO','PEP','COST','MCD','NKE','PG','HD','LOW','TGT','TJX','DG','DLTR','EL','CL','XOM','CVX','COP','SLB','BA','CAT','DE','GE','MMM','HON','UNP','UPS','LMT','RTX','LUV','T','VZ','CMCSA','TMUS','CHTR','SPOT','UBER','LYFT','ABNB','BKNG'];
-const COMPANY_NAMES = { 'AAPL':'Apple Inc.','MSFT':'Microsoft Corp.','NVDA':'NVIDIA Corp.','TSLA':'Tesla Inc.','AMZN':'Amazon.com','GOOGL':'Alphabet Inc.','META':'Meta Platforms','AMD':'Advanced Micro','NFLX':'Netflix Inc.','DIS':'Walt Disney Co.','ADBE':'Adobe Inc.','CRM':'Salesforce','ORCL':'Oracle Corp.','IBM':'IBM Corp.','QCOM':'Qualcomm','TXN':'Texas Instruments','AVGO':'Broadcom','MU':'Micron Tech','AMAT':'Applied Materials','SBUX':'Starbucks','INTC':'Intel Corp.','CSCO':'Cisco Systems','PYPL':'PayPal Holdings','SNOW':'Snowflake','CRWD':'CrowdStrike','PANW':'Palo Alto','NOW':'ServiceNow','WDAY':'Workday','TEAM':'Atlassian','DDOG':'Datadog','JPM':'JPMorgan Chase','V':'Visa Inc.','MA':'Mastercard','BAC':'Bank of America','WFC':'Wells Fargo','C':'Citigroup','GS':'Goldman Sachs','MS':'Morgan Stanley','AXP':'American Express','BLK':'BlackRock','SCHW':'Charles Schwab','USB':'U.S. Bancorp','PNC':'PNC Financial','COF':'Capital One','BK':'Bank of NY Mellon','JNJ':'Johnson & Johnson','UNH':'UnitedHealth','PFE':'Pfizer Inc.','ABBV':'AbbVie','MRK':'Merck & Co.','TMO':'Thermo Fisher','ABT':'Abbott Labs','DHR':'Danaher','BMY':'Bristol-Myers','AMGN':'Amgen','GILD':'Gilead Sciences','CVS':'CVS Health','MDT':'Medtronic','LLY':'Eli Lilly','ZTS':'Zoetis','WMT':'Walmart Inc.','KO':'Coca-Cola Co.','PEP':'PepsiCo','COST':'Costco','MCD':'McDonalds','NKE':'Nike Inc.','PG':'Procter & Gamble','HD':'Home Depot','LOW':'Lowes','TGT':'Target','TJX':'TJX Companies','DG':'Dollar General','DLTR':'Dollar Tree','EL':'Estee Lauder','CL':'Colgate-Palmolive','XOM':'Exxon Mobil','CVX':'Chevron','COP':'ConocoPhillips','SLB':'Schlumberger','BA':'Boeing Co.','CAT':'Caterpillar','DE':'Deere & Co.','GE':'General Electric','MMM':'3M','HON':'Honeywell','UNP':'Union Pacific','UPS':'UPS','LMT':'Lockheed Martin','RTX':'Raytheon','LUV':'Southwest Airlines','T':'AT&T','VZ':'Verizon','CMCSA':'Comcast','TMUS':'T-Mobile','CHTR':'Charter Comm.','SPOT':'Spotify','UBER':'Uber Tech','LYFT':'Lyft Inc.','ABNB':'Airbnb','BKNG':'Booking Holdings' };
+// Списки акций по рынкам
+const MARKETS = {
+  US: ['AAPL','MSFT','NVDA','TSLA','AMZN','GOOGL','META','AMD','NFLX','DIS','ADBE','CRM','ORCL','IBM','QCOM','TXN','AVGO','MU','AMAT','SBUX','INTC','CSCO','PYPL','JPM','V','MA','BAC','WFC','JNJ','UNH','PFE','ABBV','MRK','WMT','KO','PEP','COST','MCD','NKE','PG','XOM','CVX','BA','CAT','GE','T','VZ','UBER','ABNB'],
+  EU: ['SAP.DE', 'ASML.AS', 'SHEL.L', 'NESN.SW', 'LVMH.PA', 'MC.PA', 'OR.PA', 'DTE.DE', 'BMW.DE', 'AIR.PA', 'SIE.DE', 'ALV.DE', 'SAN.MC', 'ENEL.MI', 'TTE.PA'],
+  RU: ['SBER', 'GAZP', 'LKOH', 'YDEX', 'TATN', 'GMKN', 'ROSN', 'NVTK', 'PLZL', 'VTBR', 'SNGS', 'MOEX', 'ALRS', 'CHMF', 'MAGN']
+};
 
-// Кэш
+const COMPANY_NAMES = {
+  // US
+  'AAPL':'Apple Inc.','MSFT':'Microsoft','NVDA':'NVIDIA','TSLA':'Tesla','AMZN':'Amazon','GOOGL':'Alphabet','META':'Meta','AMD':'AMD','NFLX':'Netflix','DIS':'Disney','ADBE':'Adobe','CRM':'Salesforce','ORCL':'Oracle','IBM':'IBM','QCOM':'Qualcomm','TXN':'Texas Instruments','AVGO':'Broadcom','MU':'Micron','AMAT':'Applied Materials','SBUX':'Starbucks','INTC':'Intel','CSCO':'Cisco','PYPL':'PayPal','JPM':'JPMorgan','V':'Visa','MA':'Mastercard','BAC':'Bank of America','WFC':'Wells Fargo','JNJ':'J&J','UNH':'UnitedHealth','PFE':'Pfizer','ABBV':'AbbVie','MRK':'Merck','WMT':'Walmart','KO':'Coca-Cola','PEP':'PepsiCo','COST':'Costco','MCD':'McDonalds','NKE':'Nike','PG':'P&G','XOM':'Exxon Mobil','CVX':'Chevron','BA':'Boeing','CAT':'Caterpillar','GE':'GE','T':'AT&T','VZ':'Verizon','UBER':'Uber','ABNB':'Airbnb',
+  // EU
+  'SAP.DE':'SAP SE', 'ASML.AS':'ASML Holding', 'SHEL.L':'Shell plc', 'NESN.SW':'Nestle', 'LVMH.PA':'LVMH', 'MC.PA':'LVMH (MC)', 'OR.PA':'L\'Oreal', 'DTE.DE':'Deutsche Telekom', 'BMW.DE':'BMW', 'AIR.PA':'Airbus', 'SIE.DE':'Siemens', 'ALV.DE':'Allianz', 'SAN.MC':'Santander', 'ENEL.MI':'Enel', 'TTE.PA':'TotalEnergies',
+  // RU
+  'SBER':'Сбербанк', 'GAZP':'Газпром', 'LKOH':'Лукойл', 'YDEX':'Яндекс', 'TATN':'Татнефть', 'GMKN':'Норникель', 'ROSN':'Роснефть', 'NVTK':'Новатэк', 'PLZL':'Полюс', 'VTBR':'ВТБ', 'SNGS':'Сургутнефтегаз', 'MOEX':'Мосбиржа', 'ALRS':'Алроса', 'CHMF':'Северсталь', 'MAGN':'ММК'
+};
+
 const cache = new Map();
 async function cached(key, ttl, fn) {
   const hit = cache.get(key);
@@ -33,49 +44,62 @@ async function cached(key, ttl, fn) {
 
 // --- АДАПТЕРЫ РЫНКОВ ---
 const getQuote = (s) => cached(`q:${s}`, 60000, async () => {
+  if (MARKETS.RU.includes(s)) {
+    try {
+      const { data } = await axios.get(`https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${s}.json`);
+      const md = data.marketdata;
+      if (!md || !md.data || md.data.length === 0) return null;
+      const price = md.data[0][md.columns.indexOf('LAST')];
+      return price ? { symbol: s, price, change: 0, percent: 0, currency: 'RUB' } : null;
+    } catch(e) { return null; }
+  } 
+  
+  if (s.includes('.')) {
+    try {
+      const { data } = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${s}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const meta = data.chart.result[0].meta;
+      return { symbol: s, price: meta.regularMarketPrice, change: meta.regularMarketPrice - meta.chartPreviousClose, percent: ((meta.regularMarketPrice - meta.chartPreviousClose)/meta.chartPreviousClose)*100, currency: meta.currency };
+    } catch(e) { return null; }
+  }
+
   const { data } = await axios.get(`${BASE}/quote?symbol=${s}&token=${FINNHUB_KEY}`);
-  return { symbol: s, price: data.c, change: data.d, percent: data.dp, market: 'US' };
+  return { symbol: s, price: data.c, change: data.d, percent: data.dp, currency: 'USD' };
 });
 
-async function getMoexQuote(symbol) {
-  try {
-    const { data } = await axios.get(`https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/${symbol}.json`);
-    const marketData = data.marketdata;
-    if (!marketData || !marketData.data || marketData.data.length === 0) return null;
-    const priceIndex = marketData.columns.indexOf('LAST');
-    const price = marketData.data[0][priceIndex];
-    return price ? { symbol: symbol, price: price, change: 0, percent: 0, market: 'RU' } : null;
-  } catch (e) { return null; }
-}
-
-// --- ОСТАЛЬНЫЕ ДАННЫЕ ---
 const getFundamentals = (s) => cached(`f:${s}`, 86400000, async () => {
-  const { data } = await axios.get(`${BASE}/stock/metric?symbol=${s}&metric=all&token=${FINNHUB_KEY}`);
-  const m = data.metric || {};
-  return { symbol: s, pe: m.peBasicExclExtraTTM, ps: m.psTTM, evEbitda: m.currentEvEbitdaTTM || m.evEbitdaTTM, ebitdaMargin: m.ebitdaMarginTTM || m.operatingMarginTTM, roe: m.roeTTM, marketCap: m.marketCapitalization };
+  try {
+    const { data } = await axios.get(`${BASE}/stock/metric?symbol=${s}&metric=all&token=${FINNHUB_KEY}`);
+    const m = data.metric || {};
+    return { symbol: s, pe: m.peBasicExclExtraTTM, ps: m.psTTM, evEbitda: m.currentEvEbitdaTTM || m.evEbitdaTTM, ebitdaMargin: m.ebitdaMarginTTM || m.operatingMarginTTM, revenueGrowth: m.revenueGrowthTTMYoy, debtEbitda: m.totalDebtToEbitda || m.netDebtToEbitda, roe: m.roeTTM };
+  } catch(e) { return { symbol: s }; } // Для ЕС и РФ данных может не быть
 });
 
 const getCandles = (s, days = 60) => cached(`c:${s}:${days}`, 60000, async () => {
   const range = days <= 30 ? '1mo' : days <= 90 ? '3mo' : '1y';
-  const { data } = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${s}`, { params: { range, interval: '1d' }, headers: { 'User-Agent': 'Mozilla/5.0' } });
-  const r = data.chart.result[0]; 
-  if (!r) return { candles: [], indicators: {} };
-  const q = r.indicators.quote[0];
-  const closes = q.close.filter(c => c !== null);
-  const rsi = RSI.calculate({ values: closes, period: 14 });
-  const macd = MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
-  const sma50 = SMA.calculate({ values: closes, period: 50 });
-  const sma200 = SMA.calculate({ values: closes, period: 200 });
+  let yahooSym = s;
+  if (MARKETS.RU.includes(s)) yahooSym = `${s}.ME`; // Для Мосбиржи на Yahoo используется суффикс .ME
 
-  return {
-    candles: r.timestamp.map((t, i) => ({ x: t * 1000, o: q.open[i], h: q.high[i], l: q.low[i], c: q.close[i] })).filter(c => c.c !== null),
-    indicators: {
-      rsi: rsi.length ? rsi[rsi.length-1] : null, macd: macd.length ? macd[macd.length-1].MACD : null,
-      macdSignal: macd.length ? macd[macd.length-1].signal : null, macdHistogram: macd.length ? macd[macd.length-1].histogram : null,
-      volume: q.volume[q.volume.length-1], sma50: sma50.length ? sma50[sma50.length-1] : null,
-      sma200: sma200.length ? sma200[sma200.length-1] : null, currentPrice: closes[closes.length-1]
-    }
-  };
+  try {
+    const { data } = await axios.get(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}`, { params: { range, interval: '1d' }, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const r = data.chart.result[0]; 
+    if (!r) return { candles: [], indicators: {} };
+    const q = r.indicators.quote[0];
+    const closes = q.close.filter(c => c !== null);
+    
+    const rsi = RSI.calculate({ values: closes, period: 14 });
+    const macd = MACD.calculate({ values: closes, fastPeriod: 12, slowPeriod: 26, signalPeriod: 9 });
+    const sma50 = SMA.calculate({ values: closes, period: 50 });
+    const sma200 = SMA.calculate({ values: closes, period: 200 });
+
+    return {
+      candles: r.timestamp.map((t, i) => ({ x: t * 1000, o: q.open[i], h: q.high[i], l: q.low[i], c: q.close[i] })).filter(c => c.c !== null),
+      indicators: {
+        rsi: rsi.length ? rsi[rsi.length-1] : null, macd: macd.length ? macd[macd.length-1].MACD : null,
+        macdSignal: macd.length ? macd[macd.length-1].signal : null, macdHistogram: macd.length ? macd[macd.length-1].histogram : null,
+        volume: q.volume[q.volume.length-1], currentPrice: closes[closes.length-1]
+      }
+    };
+  } catch(e) { return { candles: [], indicators: {} }; }
 });
 
 const getTechRadar = (s) => cached(`tr:${s}`, 60000, async () => {
@@ -100,7 +124,7 @@ const getNews = () => cached('news', 600000, async () => {
     const feed = await parser.parseURL('https://www.cnbc.com/id/100003114/device/rss/rss.html');
     return feed.items.slice(0, 6).map(item => {
       let image = null; if (item.enclosure?.url) image = item.enclosure.url; else if (item.content) { const m = item.content.match(/<img[^>]+src="([^">]+)"/); if (m) image = m[1]; }
-      return { headline: item.title, source: 'CNBC', url: item.link, datetime: Math.floor(new Date(item.pubDate).getTime() / 1000), image };
+      return { headline: item.title, url: item.link, image };
     });
   } catch (e) { return []; }
 });
@@ -108,131 +132,93 @@ const getNews = () => cached('news', 600000, async () => {
 const app = express();
 app.use(cors()); app.use(express.json()); app.use(express.static(path.join(__dirname, 'public')));
 
-// --- API ЭНДПОИНТЫ ---
-app.get('/api/quote/:symbol', async (req, res) => {
-  const sym = req.params.symbol.toUpperCase();
-  const usQuote = await getQuote(sym);
-  if (usQuote && usQuote.price) return res.json(usQuote);
-  const ruQuote = await getMoexQuote(sym);
-  if (ruQuote) return res.json(ruQuote);
-  res.status(404).json({ error: 'Не найдено' });
-});
-app.get('/api/candles/:symbol', async (req, res) => { res.json(await getCandles(req.params.symbol)); });
-app.get('/api/fundamentals/:symbol', async (req, res) => { res.json(await getFundamentals(req.params.symbol)); });
-app.get('/api/tech-radar/:symbol', async (req, res) => { res.json(await getTechRadar(req.params.symbol)); });
+// API
+app.get('/api/quote/:symbol', async (req, res) => { const q = await getQuote(req.params.symbol.toUpperCase()); q ? res.json(q) : res.status(404).json({error: 'Not found'}); });
+app.get('/api/candles/:symbol', async (req, res) => { res.json(await getCandles(req.params.symbol.toUpperCase())); });
+app.get('/api/fundamentals/:symbol', async (req, res) => { res.json(await getFundamentals(req.params.symbol.toUpperCase())); });
+app.get('/api/tech-radar/:symbol', async (req, res) => { res.json(await getTechRadar(req.params.symbol.toUpperCase())); });
 app.get('/api/news', async (req, res) => { res.json(await getNews()); });
-app.get('/api/watchlist', (req, res) => { res.json(WATCHLIST.map(sym => ({ symbol: sym, name: COMPANY_NAMES[sym] || sym }))); });
+app.get('/api/watchlist', (req, res) => { 
+  res.json({
+    US: MARKETS.US.map(s => ({ symbol: s, name: COMPANY_NAMES[s] || s })),
+    EU: MARKETS.EU.map(s => ({ symbol: s, name: COMPANY_NAMES[s] || s })),
+    RU: MARKETS.RU.map(s => ({ symbol: s, name: COMPANY_NAMES[s] || s }))
+  }); 
+});
 
-// --- АВТОРИЗАЦИЯ (БЕЗ ХЭШИРОВАНИЯ) ---
+// Auth & DB
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, username } = req.body;
-  if (!email || !password || !username) return res.status(400).json({ error: 'Заполните все поля' });
+  if (!email || !password || !username) return res.status(400).json({ error: 'Заполните поля' });
   const { data: existing } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
-  if (existing) return res.status(400).json({ error: 'Этот Email уже занят' });
+  if (existing) return res.status(400).json({ error: 'Email занят' });
   const { data, error } = await supabase.from('users').insert([{ email, password, username }]).select().single();
   if (error) return res.status(500).json({ error: 'Ошибка БД' });
   res.json(data);
 });
-
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  const { data: user, error } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
-  if (error || !user || user.password !== password) return res.status(400).json({ error: 'Неверный Email или пароль' });
+  const { data: user } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+  if (!user || user.password !== password) return res.status(400).json({ error: 'Неверные данные' });
   res.json(user);
 });
-
 app.post('/api/update-portfolio', async (req, res) => {
   const { email, portfolio, returnPercent } = req.body;
-  try {
-    const { data: user } = await supabase.from('users').select('*').eq('email', email).single();
-    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
-    let badges = user.badges || [];
-    if (returnPercent > 50 && !badges.includes('🐺 Волк с Уолл-Стрит')) badges.push('🐺 Волк с Уолл-Стрит');
-    if (returnPercent > 10 && !badges.includes('📈 Первая прибыль')) badges.push('📈 Первая прибыль');
-    await supabase.from('users').update({ portfolio, return_percent: returnPercent, badges }).eq('email', email);
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  await supabase.from('users').update({ portfolio, return_percent: returnPercent }).eq('email', email);
+  res.json({ success: true });
 });
-
 app.get('/api/leaderboard', async (req, res) => {
   const { data } = await supabase.from('users').select('*').order('return_percent', { ascending: false }).limit(10);
   res.json(data || []);
 });
 
-// --- ЛИМИТНЫЕ ЗАЯВКИ ---
+// Orders
 app.get('/api/orders/:email', async (req, res) => {
   const { data } = await supabase.from('orders').select('*').eq('email', req.params.email).order('created_at', { ascending: false });
   res.json(data || []);
 });
-
 app.post('/api/orders', async (req, res) => {
   const { email, symbol, type, target_price, shares, market } = req.body;
   const { data, error } = await supabase.from('orders').insert([{ email, symbol, type, target_price, shares, market }]).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
-
 app.delete('/api/orders/:id', async (req, res) => {
   await supabase.from('orders').update({ status: 'CANCELLED' }).eq('id', req.params.id);
   res.json({ success: true });
 });
 
-// ФОНОВАЯ ПРОВЕРКА ОРДЕРОВ (каждую минуту)
+// Limit Order Background Job
 setInterval(async () => {
-  try {
-    const { data: orders } = await supabase.from('orders').select('*').eq('status', 'PENDING');
-    if (!orders || orders.length === 0) return;
-
-    for (const order of orders) {
-      let currentPrice = null;
-      if (order.market === 'RU') {
-        const q = await getMoexQuote(order.symbol);
-        if (q) currentPrice = q.price;
+  const { data: orders } = await supabase.from('orders').select('*').eq('status', 'PENDING');
+  if (!orders || orders.length === 0) return;
+  for (const order of orders) {
+    const q = await getQuote(order.symbol);
+    if (!q || !q.price) continue;
+    const shouldExec = (order.type === 'buy' && q.price <= order.target_price) || (order.type === 'sell' && q.price >= order.target_price);
+    if (shouldExec) {
+      const { data: user } = await supabase.from('users').select('*').eq('email', order.email).single();
+      if (!user) continue;
+      let p = user.portfolio;
+      const cost = order.shares * q.price;
+      if (order.type === 'buy') {
+        if (p.cash < cost) { await supabase.from('orders').update({ status: 'CANCELLED' }).eq('id', order.id); continue; }
+        p.cash -= cost;
+        if (!p.holdings[order.symbol]) p.holdings[order.symbol] = { shares: 0, totalCost: 0 };
+        p.holdings[order.symbol].shares += order.shares; p.holdings[order.symbol].totalCost += cost;
       } else {
-        const q = await getQuote(order.symbol);
-        if (q) currentPrice = q.price;
+        if (!p.holdings[order.symbol] || p.holdings[order.symbol].shares < order.shares) { await supabase.from('orders').update({ status: 'CANCELLED' }).eq('id', order.id); continue; }
+        p.cash += cost; p.holdings[order.symbol].shares -= order.shares;
+        if (p.holdings[order.symbol].shares === 0) delete p.holdings[order.symbol];
       }
-      if (!currentPrice) continue;
-
-      const shouldExecute = 
-        (order.type === 'buy' && currentPrice <= order.target_price) ||
-        (order.type === 'sell' && currentPrice >= order.target_price);
-
-      if (shouldExecute) {
-        const { data: user } = await supabase.from('users').select('*').eq('email', order.email).single();
-        if (!user) continue;
-
-        let portfolio = user.portfolio;
-        const totalCost = order.shares * currentPrice;
-
-        if (order.type === 'buy') {
-          if (portfolio.cash < totalCost) {
-            await supabase.from('orders').update({ status: 'CANCELLED' }).eq('id', order.id);
-            continue;
-          }
-          portfolio.cash -= totalCost;
-          if (!portfolio.holdings[order.symbol]) portfolio.holdings[order.symbol] = { shares: 0, totalCost: 0 };
-          portfolio.holdings[order.symbol].shares += order.shares;
-          portfolio.holdings[order.symbol].totalCost += totalCost;
-        } else {
-          if (!portfolio.holdings[order.symbol] || portfolio.holdings[order.symbol].shares < order.shares) {
-            await supabase.from('orders').update({ status: 'CANCELLED' }).eq('id', order.id);
-            continue;
-          }
-          portfolio.cash += totalCost;
-          portfolio.holdings[order.symbol].shares -= order.shares;
-          if (portfolio.holdings[order.symbol].shares === 0) delete portfolio.holdings[order.symbol];
-        }
-
-        portfolio.history.push({ date: new Date().toISOString(), type: order.type.toUpperCase(), symbol: order.symbol, shares: order.shares, price: currentPrice, total: totalCost });
-        await supabase.from('users').update({ portfolio }).eq('email', order.email);
-        await supabase.from('orders').update({ status: 'FILLED' }).eq('id', order.id);
-      }
+      p.history.push({ date: new Date().toISOString(), type: order.type.toUpperCase(), symbol: order.symbol, shares: order.shares, price: q.price, total: cost });
+      await supabase.from('users').update({ portfolio: p }).eq('email', order.email);
+      await supabase.from('orders').update({ status: 'FILLED' }).eq('id', order.id);
     }
-  } catch (err) { console.error('Ошибка ордеров:', err.message); }
+  }
 }, 60000);
 
-// WebSocket
+// WS
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server, path: '/ws' });
 const clients = new Set();
@@ -240,9 +226,7 @@ wss.on('connection', (s) => { clients.add(s); s.on('close', () => clients.delete
 function broadcast(p) { const msg = JSON.stringify(p); clients.forEach(c => { if (c.readyState === 1) c.send(msg); }); }
 function connectFinnhub() {
   const ws = new WebSocket(`wss://ws.finnhub.io?token=${FINNHUB_KEY}`);
-  ws.on('open', () => {
-    WATCHLIST.slice(0, 50).forEach((s, i) => setTimeout(() => ws.send(JSON.stringify({ type: 'subscribe', symbol: s })), i * 150));
-  });
+  ws.on('open', () => { MARKETS.US.slice(0, 50).forEach((s, i) => setTimeout(() => ws.send(JSON.stringify({ type: 'subscribe', symbol: s })), i * 150)); });
   ws.on('message', (raw) => { const m = JSON.parse(raw); if (m.type === 'trade') m.data.forEach(t => broadcast({ symbol: t.s, price: t.p })); });
   ws.on('close', () => setTimeout(connectFinnhub, 3000));
 }
