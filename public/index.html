@@ -2,13 +2,17 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="description" content="StarStocks — терминал анализа акций, криптовалют и валют: котировки, фундаментальные и технические показатели, тренировочный портфель.">
   <title>StarStocks</title>
   <link rel="icon" type="image/png" href="logo.png">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+  <div id="connBanner" class="conn-banner">Нет соединения с сервером — данные могут быть неактуальны</div>
+
   <div class="top-bar">
     <div class="logo"><img src="logo.png" alt="Logo"> StarStocks</div>
     <div class="search-container">
@@ -42,6 +46,7 @@
             <div class="header-right">
               <div class="price" id="mainPrice">—</div>
               <div class="change" id="mainChange">—</div>
+              <div class="data-note" id="mainDataNote"></div>
             </div>
           </div>
           
@@ -59,11 +64,17 @@
         <div class="analysis-grid">
           <div class="analysis-card"><h3>Фундаментальный</h3><div id="fundamentalData"></div></div>
           <div class="analysis-card"><h3>Технический</h3><div id="technicalData"></div></div>
-          <div class="analysis-card radar-card"><h3>Радар</h3><div id="gaugeContainer" style="height: 150px;"></div><h3 id="radarVerdict" style="text-align:center; margin-top:5px;"></h3></div>
+          <div class="analysis-card radar-card">
+            <h3>Радар</h3>
+            <div id="gaugeContainer" class="gauge-container"></div>
+            <h3 id="radarVerdict" style="text-align:center; margin-top:5px;">—</h3>
+            <div id="radarDetail" class="radar-detail"></div>
+          </div>
         </div>
       </div>
 
       <div class="side-column">
+        <div class="news-panel"><h3>Избранное</h3><div id="favoritesContainer" class="favorites-list"></div></div>
         <div class="news-panel"><h3>Новости</h3><div id="newsList" class="skeleton-container"></div></div>
         <div class="heatmap-panel">
           <h3>Тепловая карта <span id="heatmapMarketName"></span></h3>
@@ -96,7 +107,10 @@
     </div>
     <div class="portfolio-charts">
       <div class="chart-wrapper"><h3 style="margin-top:0;">Диверсификация</h3><div class="canvas-container"><canvas id="diversificationChart"></canvas></div></div>
-      <div class="actions-wrapper"><button class="btn-primary" onclick="exportCSV()">📥 Скачать CSV</button></div>
+      <div class="actions-wrapper">
+        <button class="btn-primary" onclick="exportCSV()">📥 Позиции в CSV</button>
+        <button class="btn-small" onclick="exportTradesCSV()">🧾 Сделки в CSV</button>
+      </div>
     </div>
     <h3>Ваши активы</h3>
     <div class="table-responsive">
@@ -178,7 +192,6 @@
 
   <div class="footer">© 2026 StarStocks. Автор: <b>Starmaker67</b></div>
 
-  <script src="https://canvasjs.com/assets/script/jquery-1.11.1.min.js"></script>
   <script src="https://cdn.canvasjs.com/canvasjs.stock.min.js"></script>
   <script src="app.js"></script>
 </body>

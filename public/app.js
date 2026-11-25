@@ -1,561 +1,1218 @@
-let currentMainSymbol = 'AAPL';
-let currentMainMarket = 'US';
-let currentMarket = 'US'; 
-let mainChart = null, gaugeChart = null, pieChart = null;
-let allMarkets = { US: [], EU: [], RU: [], CRYPTO: [], FOREX: [] };
-let allQuotes = {}; 
-let currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
-let localPortfolio = JSON.parse(localStorage.getItem('portfolio')) || { cash: 10000, holdings: {}, history: [] };
-let favorites = JSON.parse(localStorage.getItem('favorites')) || [];
-let isFetchingQuotes = false;
+'use strict';
 
-// WebSocket
-let ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-let updateTimeout = null;
-ws.onmessage = (e) => {
-  const { symbol, price } = JSON.parse(e.data);
-  if (!allQuotes[symbol]) allQuotes[symbol] = {};
-  allQuotes[symbol].price = price;
-  if (symbol === currentMainSymbol && currentMainMarket === 'US') {
-    const pEl = document.getElementById('mainPrice');
-    if (pEl) pEl.textContent = price.toFixed(2);
-  }
-  const miniPriceEl = document.getElementById(`wl-price-${symbol}`);
-  if (miniPriceEl) miniPriceEl.textContent = price.toFixed(2);
-  if (updateTimeout) return;
-  updateTimeout = setTimeout(() => { updatePortfolioUI(); updateTimeout = null; }, 1000);
+/* ============================================================ состояние */
+
+const state = {
+  currentMainSymbol: 'AAPL',
+  currentMainMarket: 'US',
+  currentMarket: 'US',
+  markets: { US: [], EU: [], RU: [], CRYPTO: [], FOREX: [] },
+  quotes: {},
+  user: null,
+  portfolio: { cash: 10000, holdings: {}, history: [] },
+  favorites: safeParse(localStorage.getItem('favorites'), []),
+  fx: { 'RUB:USD': null, 'EUR:USD': null },
+  fetchingQuotes: false,
 };
 
-// Навигация
+let mainChart = null;
+let pieChart = null;
+
+function safeParse(raw, fallback) {
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed ?? fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+const $ = (id) => document.getElementById(id);
+const currencySymbol = (code) => ({ USD: '$', EUR: '€', RUB: '₽', JPY: '¥', GBP: '£' }[code] || '');
+
+function fmtPrice(value) {
+  if (!Number.isFinite(value)) return '—';
+  if (Math.abs(value) >= 1000) return value.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  if (Math.abs(value) >= 1) return value.toFixed(2);
+  return value.toFixed(6);
+}
+
+function fmtMoney(value, currency = 'USD') {
+  if (!Number.isFinite(value)) return '—';
+  return `${currencySymbol(currency)}${value.toLocaleString('ru-RU', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function fmtPercent(value) {
+  if (!Number.isFinite(value)) return '—';
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+function esc(text) {
+  return String(text ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[ch]));
+}
+
+function displaySymbol(symbol) {
+  return String(symbol).replace(/^BINANCE:/, '').replace(/USDT$/, '');
+}
+
+/* ============================================================= WebSocket */
+
+let ws = null;
+let wsRetry = 1000;
+
+function connectWs() {
+  const protocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  ws = new WebSocket(protocol + location.host + '/ws');
+
+  ws.onopen = () => {
+    wsRetry = 1000;
+    setConnectionState(true);
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const { symbol, price } = JSON.parse(event.data);
+      if (!symbol || !Number.isFinite(price)) return;
+      state.quotes[symbol] = { ...(state.quotes[symbol] || {}), price };
+
+      if (symbol === state.currentMainSymbol) {
+        const priceEl = $('mainPrice');
+        if (priceEl) priceEl.textContent = fmtPrice(price);
+      }
+      const cardEl = $(`wl-price-${symbol}`);
+      if (cardEl) cardEl.textContent = fmtPrice(price);
+    } catch (_) {
+      /* битое сообщение не должно ломать поток */
+    }
+  };
+
+  ws.onclose = () => {
+    setConnectionState(false);
+    setTimeout(connectWs, wsRetry);
+    wsRetry = Math.min(wsRetry * 2, 30_000);
+  };
+
+  ws.onerror = () => { /* обработчик нужен, иначе браузер шумит в консоли */ };
+}
+
+function setConnectionState(online) {
+  const banner = $('connBanner');
+  if (banner) banner.style.display = online ? 'none' : 'block';
+}
+
+/* ================================================================ навигация */
+
 function switchTab(tabId, btn) {
-  if ((tabId === 'portfolio' || tabId === 'orders') && !currentUser) {
-    alert('Пожалуйста, войдите в аккаунт!');
+  if ((tabId === 'portfolio' || tabId === 'orders') && !state.user) {
     openModal('authModal');
     return;
   }
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.nav-tabs .tab-btn').forEach(el => el.classList.remove('active'));
-  const target = document.getElementById('tab-' + tabId);
+  document.querySelectorAll('.tab-content').forEach((el) => el.classList.remove('active'));
+  document.querySelectorAll('.nav-tabs .tab-btn').forEach((el) => el.classList.remove('active'));
+  const target = $(`tab-${tabId}`);
   if (target) target.classList.add('active');
   if (btn) btn.classList.add('active');
-  
+
   if (tabId === 'leaderboard') loadLeaderboard();
   if (tabId === 'portfolio') { updatePortfolioUI(); fetchPortfolioQuotes(); }
   if (tabId === 'orders') loadOrders();
 }
 
 function switchMarket(market, btn) {
-  currentMarket = market;
-  document.querySelectorAll('.market-btn').forEach(b => b.classList.remove('active'));
+  state.currentMarket = market;
+  document.querySelectorAll('.market-btn').forEach((b) => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
   renderWatchlist();
   loadHeatmap(market);
 }
 
-// Список акций
+/* =============================================================== watchlist */
+
 function renderWatchlist() {
-  const container = document.getElementById('watchlistContainer');
+  const container = $('watchlistContainer');
+  if (!container) return;
   container.innerHTML = '';
-  const stocks = allMarkets[currentMarket] || [];
-  stocks.slice(0, 12).forEach((stock, i) => createCard(stock, currentMarket, container, i));
-  document.getElementById('showMoreBtn').style.display = stocks.length > 12 ? 'block' : 'none';
+  const stocks = state.markets[state.currentMarket] || [];
+  stocks.slice(0, 12).forEach((stock, index) => createCard(stock, container, index));
+  const moreBtn = $('showMoreBtn');
+  if (moreBtn) moreBtn.style.display = stocks.length > 12 ? 'block' : 'none';
 }
 
 function showMoreStocks() {
-  const container = document.getElementById('watchlistContainer');
-  const stocks = allMarkets[currentMarket] || [];
-  const currentCount = container.children.length;
-  const nextBatch = stocks.slice(currentCount, currentCount + 12);
-  nextBatch.forEach((stock, i) => createCard(stock, currentMarket, container, i));
-  if (container.children.length >= stocks.length) document.getElementById('showMoreBtn').style.display = 'none';
-}
-
-function createCard(stock, market, container, index) {
-  const div = document.createElement('div'); 
-  div.className = 'watchlist-item';
-  div.onclick = () => { 
-    loadMainStock(stock.symbol, stock.name, market); 
-    switchTab('dashboard', document.querySelector('.nav-tabs .tab-btn')); 
-    window.scrollTo(0,0); 
-  };
-  const displaySymbol = stock.symbol.replace('BINANCE:', '').replace('USDT', '');
-  div.innerHTML = `
-    <div class="wl-header">
-      <div><div class="wl-symbol">${displaySymbol}</div><div class="wl-company">${stock.name}</div></div>
-      <div><div class="wl-price" id="wl-price-${stock.symbol}">—</div><div class="wl-change" id="wl-change-${stock.symbol}">—</div></div>
-    </div>
-    <div class="wl-analysis" id="wl-analysis-${stock.symbol}" style="margin-top:10px; font-size:13px; min-height:40px; color:#8b949e;">Загрузка...</div>
-  `;
-  container.appendChild(div);
-  setTimeout(() => {
-    fetchQuoteForCard(stock.symbol, market);
-    loadCardAnalysis(stock.symbol, market);
-  }, index * 150);
-}
-
-async function fetchQuoteForCard(symbol, market) {
-  try {
-    const q = await fetch(`/api/quote/${market}/${symbol}`).then(r => r.json());
-    if (q.error) return;
-    allQuotes[symbol] = q;
-    const pEl = document.getElementById(`wl-price-${symbol}`); 
-    const cEl = document.getElementById(`wl-change-${symbol}`);
-    if (pEl) pEl.textContent = q.price ? q.price.toFixed(2) : '—';
-    if (cEl && q.percent !== undefined) { 
-      cEl.textContent = `${q.percent > 0 ? '+' : ''}${q.percent.toFixed(2)}%`; 
-      cEl.className = 'wl-change ' + (q.percent >= 0 ? 'up' : 'down'); 
-    }
-  } catch(e) {}
-}
-
-async function loadCardAnalysis(symbol, market) {
-  const container = document.getElementById(`wl-analysis-${symbol}`);
-  if (!container) return;
-  try {
-    const [radar, fundamentals] = await Promise.all([ 
-      fetch(`/api/tech-radar/${market}/${symbol}`).then(r => r.json()), 
-      fetch(`/api/fundamentals/${market}/${symbol}`).then(r => r.json()) 
-    ]);
-    const vColor = radar.score > 0 ? 'var(--up)' : (radar.score < 0 ? 'var(--down)' : '#8b949e');
-    const pe = fundamentals.pe ? Number(fundamentals.pe).toFixed(2) : '—';
-    container.innerHTML = `
-      <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Радар:</span><span style="color:${vColor}; font-weight:bold;">${radar.verdict}</span></div>
-      <div style="display:flex; justify-content:space-between;"><span>P/E:</span><span>${pe}</span></div>
-    `;
-  } catch (e) { container.innerHTML = '<span style="color:var(--down)">Нет данных</span>'; }
-}
-
-// Главный экран
-async function loadMainStock(symbol, name, market) {
-  currentMainSymbol = symbol;
-  currentMainMarket = market;
-  const displaySymbol = symbol.replace('BINANCE:', '').replace('USDT', '');
-  document.getElementById('mainTicker').textContent = displaySymbol;
-  document.getElementById('mainCompany').textContent = name || displaySymbol;
-  document.getElementById('symbolInput').value = displaySymbol;
-  const starBtn = document.getElementById('mainStarBtn');
-  if (favorites.includes(symbol)) starBtn.classList.add('active');
-  else starBtn.classList.remove('active');
-
-  loadMainChart('price');
-  loadTechRadar(symbol, market);
-
-  try {
-    const q = await fetch(`/api/quote/${market}/${symbol}`).then(r => r.json());
-    if (q.error) throw new Error('Не найдено');
-    allQuotes[symbol] = q;
-    document.getElementById('mainPrice').textContent = q.price ? q.price.toFixed(2) : '—';
-    const ch = document.getElementById('mainChange');
-    const changeVal = q.change || 0;
-    const percentVal = q.percent || 0;
-    ch.textContent = (changeVal >= 0 ? '+' : '') + changeVal.toFixed(2) + ' (' + percentVal.toFixed(2) + '%)';
-    ch.className = 'change ' + (changeVal >= 0 ? 'up' : 'down');
-
-    const f = await fetch(`/api/fundamentals/${market}/${symbol}`).then(r => r.json());
-    const fMetrics = [
-      { label: 'P/E', v: f.pe, b: 15, inv: false }, { label: 'P/S', v: f.ps, b: 3, inv: false },
-      { label: 'EV/EBITDA', v: f.evEbitda, b: 8, inv: false }, { label: 'EBITDA Margin', v: f.ebitdaMargin, b: 15, inv: false },
-      { label: 'Rev Growth', v: f.revenueGrowth, b: 5, inv: false }, { label: 'Debt/EBITDA', v: f.debtEbitda, b: 2.5, inv: true },
-      { label: 'ROE', v: f.roe, b: 10, inv: false }
-    ];
-    document.getElementById('fundamentalData').innerHTML = fMetrics.map(m => {
-      if (m.v == null) return `<div class="metric na"><span>${m.label}</span><span>—</span></div>`;
-      const good = m.inv ? m.v < m.b : m.v > m.b;
-      return `<div class="metric ${good ? 'good' : 'bad'}"><span>${m.label}</span><span>${Number(m.v).toFixed(2)}</span></div>`;
-    }).join('');
-
-    const c = await fetch(`/api/candles/${market}/${symbol}`).then(r => r.json());
-    if (c.indicators && c.indicators.rsi) {
-      const ind = c.indicators;
-      document.getElementById('technicalData').innerHTML = `
-        <div class="metric"><span>RSI (14)</span><span>${ind.rsi.toFixed(2)}</span></div>
-        <div class="metric"><span>MACD</span><span>${ind.macd ? ind.macd.toFixed(3) : '—'}</span></div>
-        <div class="metric"><span>MACD Hist</span><span>${ind.macdHistogram ? ind.macdHistogram.toFixed(3) : '—'}</span></div>
-        <div class="metric"><span>Volume</span><span>${ind.volume ? ind.volume.toLocaleString() : '—'}</span></div>
-      `;
-    } else {
-      document.getElementById('technicalData').innerHTML = '<div class="metric na">Нет данных графика</div>';
-    }
-  } catch(e) { 
-    document.getElementById('fundamentalData').innerHTML = '<div class="metric na">Ошибка загрузки</div>';
-    document.getElementById('technicalData').innerHTML = '<div class="metric na">Ошибка загрузки</div>';
+  const container = $('watchlistContainer');
+  const stocks = state.markets[state.currentMarket] || [];
+  const nextBatch = stocks.slice(container.children.length, container.children.length + 12);
+  nextBatch.forEach((stock, index) => createCard(stock, container, index));
+  if (container.children.length >= stocks.length && $('showMoreBtn')) {
+    $('showMoreBtn').style.display = 'none';
   }
 }
 
-async function loadMainChart(type) {
-  const el = document.getElementById('mainChart'); 
-  const targetSymbol = currentMainSymbol; 
-  const targetMarket = currentMainMarket;
-  el.innerHTML = '<div style="color:#8b949e; padding:20px;">Загрузка графика...</div>'; 
-  if (mainChart) mainChart.destroy();
+function createCard(stock, container, index, idPrefix = 'wl') {
+  const card = document.createElement('div');
+  card.className = 'watchlist-item';
+  const symbolId = `${idPrefix}-price-${stock.symbol}`;
+  const changeId = `${idPrefix}-change-${stock.symbol}`;
+  const analysisId = `${idPrefix}-analysis-${stock.symbol}`;
+
+  card.innerHTML = `
+    <div class="wl-header">
+      <div>
+        <div class="wl-symbol">${esc(displaySymbol(stock.symbol))}</div>
+        <div class="wl-company">${esc(stock.name)}</div>
+      </div>
+      <div>
+        <div class="wl-price" id="${esc(symbolId)}">—</div>
+        <div class="wl-change" id="${esc(changeId)}">—</div>
+      </div>
+    </div>
+    <div class="wl-analysis" id="${esc(analysisId)}">Загрузка…</div>
+  `;
+
+  card.onclick = () => {
+    loadMainStock(stock.symbol, stock.name, stock.market || state.currentMarket);
+    switchTab('dashboard', document.querySelector('.nav-tabs .tab-btn'));
+    window.scrollTo(0, 0);
+  };
+
+  container.appendChild(card);
+  setTimeout(() => {
+    fetchQuoteForCard(stock, idPrefix);
+    loadCardAnalysis(stock, idPrefix);
+  }, index * 120);
+}
+
+async function fetchQuoteForCard(stock, idPrefix = 'wl') {
   try {
-    const res = await fetch(`/api/candles/${targetMarket}/${targetSymbol}`).then(r => r.json());
-    if (targetSymbol !== currentMainSymbol) return; 
-    if (!res.candles || res.candles.length === 0) throw new Error('Нет данных');
-    el.innerHTML = '';
-    const pts = res.candles.map(p => ({ x: new Date(p.x), y: [p.o, p.h, p.l, p.c] }));
-    mainChart = new CanvasJS.StockChart("mainChart", { 
-      theme: "dark2", backgroundColor: "transparent", 
-      charts: [{ data: [{ type: 'candlestick', dataPoints: pts, risingColor: '#238636', fallingColor: '#da3633' }] }], 
-      navigator: { enabled: true } 
+    const response = await fetch(`/api/quote/${stock.market || state.currentMarket}/${encodeURIComponent(stock.symbol)}`);
+    if (!response.ok) return;
+    const quote = await response.json();
+    state.quotes[stock.symbol] = quote;
+
+    const priceEl = $(`${idPrefix}-price-${stock.symbol}`);
+    const changeEl = $(`${idPrefix}-change-${stock.symbol}`);
+    if (priceEl) priceEl.textContent = fmtPrice(quote.price);
+    if (changeEl && Number.isFinite(quote.percent)) {
+      changeEl.textContent = fmtPercent(quote.percent);
+      changeEl.className = `wl-change ${quote.percent >= 0 ? 'up' : 'down'}`;
+    }
+  } catch (_) {
+    /* карточка останется с прочерком */
+  }
+}
+
+async function loadCardAnalysis(stock, idPrefix = 'wl') {
+  const container = $(`${idPrefix}-analysis-${stock.symbol}`);
+  if (!container) return;
+
+  try {
+    const market = stock.market || state.currentMarket;
+    const [radar, fundamentals] = await Promise.all([
+      fetch(`/api/tech-radar/${market}/${encodeURIComponent(stock.symbol)}`).then((r) => (r.ok ? r.json() : null)),
+      fetch(`/api/fundamentals/${market}/${encodeURIComponent(stock.symbol)}`).then((r) => (r.ok ? r.json() : null)),
+    ]);
+
+    const color = radar && radar.score > 0 ? 'var(--up)' : radar && radar.score < 0 ? 'var(--down)' : 'var(--muted)';
+    const pe = fundamentals && fundamentals.available && Number.isFinite(fundamentals.pe)
+      ? fundamentals.pe.toFixed(2)
+      : '—';
+
+    container.innerHTML = `
+      <div class="wl-row"><span>Радар</span><span style="color:${color}; font-weight:600;">${esc(radar ? radar.verdict : '—')}</span></div>
+      <div class="wl-row"><span>P/E</span><span>${esc(pe)}</span></div>
+    `;
+  } catch (_) {
+    container.innerHTML = '<span class="muted">Нет данных</span>';
+  }
+}
+
+/* ============================================================ главный экран */
+
+async function loadMainStock(symbol, name, market) {
+  state.currentMainSymbol = symbol;
+  state.currentMainMarket = market;
+
+  $('mainTicker').textContent = displaySymbol(symbol);
+  $('mainCompany').textContent = name || displaySymbol(symbol);
+  $('symbolInput').value = displaySymbol(symbol);
+
+  const starBtn = $('mainStarBtn');
+  if (starBtn) starBtn.classList.toggle('active', state.favorites.includes(symbol));
+
+  loadMainChart();
+  loadTechRadar(symbol, market);
+
+  try {
+    const response = await fetch(`/api/quote/${market}/${encodeURIComponent(symbol)}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || 'Нет данных');
+    }
+    const quote = await response.json();
+    state.quotes[symbol] = quote;
+
+    $('mainPrice').textContent = fmtPrice(quote.price);
+    const changeEl = $('mainChange');
+    const change = Number.isFinite(quote.change) ? quote.change : null;
+    const percent = Number.isFinite(quote.percent) ? quote.percent : null;
+    changeEl.textContent = `${change !== null ? `${change > 0 ? '+' : ''}${change.toFixed(2)}` : '—'} (${percent !== null ? fmtPercent(percent) : '—'})`;
+    changeEl.className = `change ${percent !== null && percent < 0 ? 'down' : 'up'}`;
+
+    const note = $('mainDataNote');
+    if (note) {
+      const parts = [`${currencySymbol(quote.currency)} ${quote.currency}`];
+      if (quote.source) parts.push(quote.source);
+      if (quote.delayed) parts.push('задержка');
+      if (quote.asOf) parts.push(new Date(quote.asOf).toLocaleString('ru-RU'));
+      note.textContent = parts.join(' · ');
+    }
+  } catch (error) {
+    $('mainPrice').textContent = '—';
+    $('mainChange').textContent = error.message || 'Нет данных';
+    $('mainChange').className = 'change';
+  }
+
+  await Promise.all([loadFundamentals(symbol, market), loadTechnical(symbol, market)]);
+}
+
+async function loadFundamentals(symbol, market) {
+  const container = $('fundamentalData');
+  if (!container) return;
+  container.innerHTML = '<div class="metric"><span>Загрузка…</span><span></span></div>';
+
+  try {
+    const response = await fetch(`/api/fundamentals/${market}/${encodeURIComponent(symbol)}`);
+    const data = await response.json();
+
+    if (!data.available) {
+      const reason = data.reason === 'not_applicable'
+        ? 'Для этого класса активов фундаментальные мультипликаторы не рассчитываются.'
+        : 'Источник фундаментальных данных недоступен. Мы не показываем прочерки вместо анализа.';
+      container.innerHTML = `<div class="metric na" style="display:block; line-height:1.5;">${esc(reason)}</div>`;
+      return;
+    }
+
+    // Показываем ровно те метрики, которые вернул источник: без выдуманных «норм»
+    // и без подмены EBITDA margin на operating margin.
+    const metrics = Array.isArray(data.metrics) ? data.metrics : [];
+    if (!metrics.length) {
+      container.innerHTML = '<div class="metric na" style="display:block;">Данные не получены</div>';
+      return;
+    }
+
+    container.innerHTML = metrics.map((metric) => {
+      const value = Number.isFinite(metric.value) ? metric.value.toFixed(2) : null;
+      const display = value === null ? '—' : metric.unit === '%' ? `${value}%` : `${value}×`;
+      return `<div class="metric ${value === null ? 'na' : ''}" data-metric="${metric.key}"><span>${esc(metric.label)}</span><span>${display}</span></div>`;
+    }).join('');
+  } catch (_) {
+    container.innerHTML = '<div class="metric na">Ошибка загрузки</div>';
+  }
+}
+
+async function loadTechnical(symbol, market) {
+  const container = $('technicalData');
+  if (!container) return;
+  container.innerHTML = '<div class="metric"><span>Загрузка…</span><span></span></div>';
+
+  try {
+    const response = await fetch(`/api/candles/${market}/${encodeURIComponent(symbol)}?days=365`);
+    if (!response.ok) throw new Error('Нет свечей');
+    const data = await response.json();
+    const indicators = data.indicators;
+    if (!indicators) throw new Error('Нет индикаторов');
+
+    const row = (label, key, value, suffix = '') => {
+      const display = Number.isFinite(value) ? `${value.toFixed(2)}${suffix}` : '—';
+      return `<div class="metric" data-metric="${key}"><span>${label}</span><span>${display}</span></div>`;
+    };
+
+    container.innerHTML = [
+      row('RSI (14)', 'rsi', indicators.rsi),
+      row('MACD', 'macd', indicators.macd, ''),
+      row('MACD Hist', 'macdHistogram', indicators.macdHistogram, ''),
+      row('SMA 50', 'sma50', indicators.sma50),
+      row('SMA 200', 'sma200', indicators.sma200),
+      Number.isFinite(indicators.volume)
+        ? `<div class="metric" data-metric="volume"><span>Объём</span><span>${Math.round(indicators.volume).toLocaleString('ru-RU')}</span></div>`
+        : '<div class="metric na" data-metric="volume"><span>Объём</span><span>—</span></div>',
+      Number.isFinite(indicators.avgVolume20)
+        ? `<div class="metric" data-metric="avgVolume"><span>Ср. объём (20)</span><span>${Math.round(indicators.avgVolume20).toLocaleString('ru-RU')}</span></div>`
+        : '',
+    ].join('');
+  } catch (_) {
+    container.innerHTML = '<div class="metric na">Ошибка загрузки</div>';
+  }
+}
+
+async function loadMainChart() {
+  const targetSymbol = state.currentMainSymbol;
+  const targetMarket = state.currentMainMarket;
+  const container = $('mainChart');
+  if (!container) return;
+
+  container.innerHTML = '<div class="muted" style="padding:20px;">Загрузка графика…</div>';
+  if (mainChart) {
+    try { mainChart.destroy(); } catch (_) { /* ignore */ }
+    mainChart = null;
+  }
+
+  try {
+    const response = await fetch(`/api/candles/${targetMarket}/${encodeURIComponent(targetSymbol)}?days=365`);
+    if (!response.ok) throw new Error('Нет свечей');
+    const data = await response.json();
+    if (targetSymbol !== state.currentMainSymbol) return;
+    if (!data.candles || !data.candles.length) throw new Error('Пусто');
+
+    container.innerHTML = '';
+    const points = data.candles.map((candle) => ({ x: new Date(candle.x), y: [candle.o, candle.h, candle.l, candle.c] }));
+
+    mainChart = new CanvasJS.StockChart(container, {
+      theme: 'dark2',
+      backgroundColor: 'transparent',
+      animationEnabled: false,
+      charts: [{
+        data: [{
+          type: 'candlestick',
+          dataPoints: points,
+          risingColor: '#238636',
+          fallingColor: '#da3633',
+        }],
+      }],
+      navigator: { enabled: true },
     });
     mainChart.render();
-  } catch(e) { 
-    if (targetSymbol === currentMainSymbol) el.innerHTML = '<div style="color:#8b949e; text-align:center; padding:20px;">График недоступен</div>'; 
+  } catch (_) {
+    if (targetSymbol === state.currentMainSymbol) {
+      container.innerHTML = '<div class="muted" style="text-align:center; padding:20px;">График недоступен</div>';
+    }
   }
 }
 
 async function loadTechRadar(symbol, market) {
   try {
-    const tr = await fetch(`/api/tech-radar/${market}/${symbol}`).then(r => r.json()); 
-    if (symbol !== currentMainSymbol) return;
-    const vEl = document.getElementById('radarVerdict');
-    vEl.textContent = tr.verdict; 
-    vEl.style.color = tr.score > 0 ? 'var(--up)' : tr.score < 0 ? 'var(--down)' : '#8b949e';
-    if (gaugeChart) gaugeChart.destroy();
-    gaugeChart = new CanvasJS.Chart("gaugeContainer", { 
-      theme: "dark2", backgroundColor: "transparent", 
-      data: [{ type: "doughnut", startAngle: -90, endAngle: 90, radius: "100%", dataPoints: [{ y: 33, color: "#da3633" }, { y: 34, color: "#8b949e" }, { y: 33, color: "#238636" }] }] 
-    });
-    gaugeChart.render();
-  } catch(e) {}
+    const response = await fetch(`/api/tech-radar/${market}/${encodeURIComponent(symbol)}`);
+    if (!response.ok) return;
+    const radar = await response.json();
+    if (symbol !== state.currentMainSymbol) return;
+
+    const verdictEl = $('radarVerdict');
+    verdictEl.textContent = radar.verdict;
+    verdictEl.style.color = radar.score > 0 ? 'var(--up)' : radar.score < 0 ? 'var(--down)' : 'var(--muted)';
+
+    renderGauge(radar.score);
+    const detail = $('radarDetail');
+    if (detail) {
+      if (radar.buy + radar.sell + radar.neutral === 0) {
+        detail.textContent = 'Недостаточно данных для сигналов';
+      } else {
+        detail.innerHTML = `Покупать: <b class="up">${radar.buy}</b> · Нейтрально: <b>${radar.neutral}</b> · Продавать: <b class="down">${radar.sell}</b>`;
+      }
+    }
+  } catch (_) {
+    /* радар необязателен */
+  }
 }
 
-// Портфель
-function findMarketForSymbol(sym) {
-  for (const [market, list] of Object.entries(allMarkets)) {
-    if (list.some(s => s.symbol === sym)) return market;
-  }
-  return 'US'; 
+/** Живой гейдж: раньше здесь всегда рисовались три равных сектора. */
+function renderGauge(score) {
+  const container = $('gaugeContainer');
+  if (!container) return;
+  const clamped = Math.max(-1, Math.min(1, Number(score) || 0));
+  const angle = -90 + (clamped + 1) * 90; // -90° … +90°
+  const color = clamped > 0.17 ? 'var(--up)' : clamped < -0.17 ? 'var(--down)' : 'var(--muted)';
+
+  container.innerHTML = `
+    <div class="gauge">
+      <svg viewBox="0 0 200 110" role="img" aria-label="Сигнал радара">
+        <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="#da3633" stroke-width="14" stroke-linecap="round" opacity="0.35"/>
+        <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="url(#gaugeGrad)" stroke-width="14" stroke-linecap="round" opacity="0.15"/>
+        <g transform="rotate(${angle} 100 100)">
+          <line x1="100" y1="100" x2="100" y2="34" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
+        </g>
+        <circle cx="100" cy="100" r="6" fill="${color}"/>
+      </svg>
+    </div>
+  `;
 }
 
-function calcReturnPercent() {
-  let stockValue = 0;
-  for (const [sym, data] of Object.entries(localPortfolio.holdings)) {
-    const currPrice = allQuotes[sym]?.price || 0;
-    stockValue += currPrice * data.shares;
+/* ================================================================= портфель */
+
+function findMarketForSymbol(symbol) {
+  for (const [market, list] of Object.entries(state.markets)) {
+    if (list.some((item) => item.symbol === symbol)) return market;
   }
-  return ((localPortfolio.cash + stockValue - 10000) / 10000) * 100;
+  return null;
+}
+
+function currencyOfSymbol(symbol) {
+  const market = findMarketForSymbol(symbol);
+  return { US: 'USD', EU: 'EUR', RU: 'RUB', CRYPTO: 'USD', FOREX: 'USD' }[market] || 'USD';
+}
+
+async function loadFxRates() {
+  const pairs = [['RUB', 'USD'], ['EUR', 'USD']];
+  await Promise.all(pairs.map(async ([from, to]) => {
+    try {
+      const response = await fetch(`/api/fx?from=${from}&to=${to}`);
+      if (!response.ok) return;
+      const data = await response.json();
+      state.fx[`${from}:${to}`] = data.rate;
+    } catch (_) { /* без курса покажем приблизительно */ }
+  }));
+}
+
+function toUsd(value, currency) {
+  if (currency === 'USD') return value;
+  const rate = state.fx[`${currency}:USD`];
+  return Number.isFinite(rate) ? value * rate : null;
+}
+
+function portfolioValuation() {
+  let stockUsd = 0;
+  let partial = false;
+
+  const rows = Object.entries(state.portfolio.holdings).map(([symbol, position]) => {
+    const quote = state.quotes[symbol];
+    const currency = currencyOfSymbol(symbol);
+    const price = quote && Number.isFinite(quote.price) ? quote.price : null;
+    const value = price !== null ? price * position.shares : 0;
+    const valueUsd = toUsd(value, currency);
+    if (valueUsd === null) partial = true;
+    else stockUsd += valueUsd;
+
+    const cost = Number(position.totalCost) || 0;
+    const pnl = value - cost;
+    return { symbol, position, currency, price, value, valueUsd, cost, pnl };
+  });
+
+  const total = state.portfolio.cash + stockUsd;
+  return { rows, stockUsd, total, partial, profit: total - 10000 };
 }
 
 function updatePortfolioUI() {
-  document.getElementById('cashBalance').textContent = '$' + localPortfolio.cash.toLocaleString('en-US', {minimumFractionDigits: 2});
-  let stockValue = 0;
-  const tbody = document.querySelector('#holdingsTable tbody'); 
-  if (!tbody) return; 
-  tbody.innerHTML = '';
-  const pieData = [{ label: 'Cash', value: localPortfolio.cash }];
-  for (const [sym, data] of Object.entries(localPortfolio.holdings)) {
-    const currPrice = allQuotes[sym]?.price || 0;
-    const val = currPrice * data.shares;
-    const cost = data.totalCost;
-    const pnl = val - cost;
-    stockValue += val; 
-    const displaySymbol = sym.replace('BINANCE:', '').replace('USDT', '');
-    pieData.push({ label: displaySymbol, value: val });
-    tbody.innerHTML += `
-      <tr>
-        <td><b>${displaySymbol}</b></td><td>${data.shares}</td>
-        <td>$${(cost/data.shares).toFixed(2)}</td><td>$${currPrice.toFixed(2)}</td>
-        <td>$${val.toFixed(2)}</td><td class="${pnl>=0?'up':'down'}">$${pnl.toFixed(2)}</td>
-        <td><button class="btn-small btn-sell" onclick="sellFromPortfolio('${sym}')">Продать</button></td>
-      </tr>`;
-  }
-  document.getElementById('portfolioValue').textContent = '$' + stockValue.toLocaleString('en-US', {minimumFractionDigits: 2});
-  const totalValue = localPortfolio.cash + stockValue;
-  const profit = totalValue - 10000;
-  const pnlEl = document.getElementById('portfolioPnL');
-  pnlEl.textContent = `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${((profit/10000)*100).toFixed(2)}%)`;
-  pnlEl.className = profit >= 0 ? 'up' : 'down';
+  const cashEl = $('cashBalance');
+  if (cashEl) cashEl.textContent = fmtMoney(state.portfolio.cash, 'USD');
 
-  const ctx = document.getElementById('diversificationChart');
-  if (ctx) {
-    if (pieChart) { pieChart.data.labels = pieData.map(d => d.label); pieChart.data.datasets[0].data = pieData.map(d => d.value); pieChart.update(); } 
-    else { pieChart = new Chart(ctx, { type: 'doughnut', data: { labels: pieData.map(d => d.label), datasets: [{ data: pieData.map(d => d.value), backgroundColor: ['#58a6ff','#238636','#da3633','#e3b341','#a371f7'], borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#c9d1d9' } } } } }); }
+  const valuation = portfolioValuation();
+  const tbody = document.querySelector('#holdingsTable tbody');
+  if (tbody) {
+    tbody.innerHTML = valuation.rows.length
+      ? valuation.rows.map((row) => `
+        <tr>
+          <td><b>${esc(displaySymbol(row.symbol))}</b></td>
+          <td>${row.position.shares}</td>
+          <td>${fmtMoney(row.position.shares ? row.cost / row.position.shares : 0, row.currency)}</td>
+          <td>${fmtMoney(row.price, row.currency)}</td>
+          <td>${fmtMoney(row.value, row.currency)}</td>
+          <td class="${row.pnl >= 0 ? 'up' : 'down'}">${fmtMoney(row.pnl, row.currency)}</td>
+          <td><button class="btn-small btn-sell" data-sell="${esc(row.symbol)}">Продать</button></td>
+        </tr>`).join('')
+      : '<tr><td colspan="7" class="muted" style="text-align:center;">Пока нет активов</td></tr>';
   }
+
+  const valueEl = $('portfolioValue');
+  if (valueEl) valueEl.textContent = fmtMoney(valuation.stockUsd, 'USD');
+
+  const pnlEl = $('portfolioPnL');
+  if (pnlEl) {
+    const suffix = valuation.partial ? ' *' : '';
+    pnlEl.textContent = `${valuation.profit >= 0 ? '+' : ''}${fmtMoney(valuation.profit, 'USD')} (${fmtPercent((valuation.profit / 10000) * 100)})${suffix}`;
+    pnlEl.className = valuation.profit >= 0 ? 'up' : 'down';
+  }
+
+  renderPie(valuation);
 }
 
-async function sellFromPortfolio(symbol) {
-  const market = findMarketForSymbol(symbol);
-  try {
-    const q = await fetch(`/api/quote/${market}/${symbol}`).then(r => r.json());
-    if (q && q.price) allQuotes[symbol] = q;
-  } catch(e) {}
-  currentMainSymbol = symbol;
-  currentMainMarket = market;
-  document.getElementById('mainTicker').textContent = symbol.replace('BINANCE:', '').replace('USDT', '');
-  switchTab('dashboard', document.querySelector('.nav-tabs .tab-btn'));
-  loadMainStock(symbol, symbol, market);
-  openTradeModal('sell');
+function renderPie(valuation) {
+  const canvas = $('diversificationChart');
+  if (!canvas || typeof Chart === 'undefined') return;
+
+  const labels = ['Кэш', ...valuation.rows.map((row) => displaySymbol(row.symbol))];
+  const values = [state.portfolio.cash, ...valuation.rows.map((row) => row.valueUsd ?? row.value)];
+  const palette = ['#58a6ff', '#238636', '#da3633', '#e3b341', '#a371f7', '#39c5cf', '#f778ba', '#ffa657'];
+
+  if (pieChart) {
+    pieChart.data.labels = labels;
+    pieChart.data.datasets[0].data = values;
+    pieChart.data.datasets[0].backgroundColor = labels.map((_, index) => palette[index % palette.length]);
+    pieChart.update();
+    return;
+  }
+
+  pieChart = new Chart(canvas, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: labels.map((_, i) => palette[i % palette.length]), borderWidth: 0 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#c9d1d9' } } },
+    },
+  });
 }
 
 async function fetchPortfolioQuotes() {
-  if (isFetchingQuotes) return;
-  const holdings = Object.keys(localPortfolio.holdings); 
-  if (holdings.length === 0) return;
-  isFetchingQuotes = true;
-  for (const sym of holdings) { 
-    try { 
-      const market = findMarketForSymbol(sym);
-      const q = await fetch(`/api/quote/${market}/${sym}`).then(r => r.json()); 
-      if (q && q.price) allQuotes[sym] = q; 
-    } catch(e) {} 
+  if (state.fetchingQuotes) return;
+  const symbols = Object.keys(state.portfolio.holdings);
+  if (!symbols.length) return;
+
+  state.fetchingQuotes = true;
+  try {
+    await Promise.all(symbols.map(async (symbol) => {
+      const market = findMarketForSymbol(symbol);
+      if (!market) return;
+      try {
+        const response = await fetch(`/api/quote/${market}/${encodeURIComponent(symbol)}`);
+        if (response.ok) state.quotes[symbol] = await response.json();
+      } catch (_) { /* пропускаем один тикер — остальные обновятся */ }
+    }));
+  } finally {
+    state.fetchingQuotes = false;
   }
-  isFetchingQuotes = false;
   updatePortfolioUI();
 }
 
-// Тепловая карта
-async function loadHeatmap(market) {
-  const container = document.getElementById('heatmapContainer');
-  const titleSpan = document.getElementById('heatmapMarketName');
-  const marketNames = { US: 'США', EU: 'Европа', RU: 'Россия', CRYPTO: 'Крипта', FOREX: 'Валюты' };
-  if (titleSpan) titleSpan.textContent = `(${marketNames[market] || market})`;
-  if (!container) return;
-  container.innerHTML = '<div style="color:#8b949e; width:100%; text-align:center; padding:20px;">Загрузка...</div>';
-
-  try {
-    const data = await fetch(`/api/heatmap/${market}`).then(r => r.json());
-    if (!data || data.length === 0) {
-      container.innerHTML = '<div style="color:#8b949e; width:100%; text-align:center; padding:20px;">Нет данных</div>';
-      return;
-    }
-    container.innerHTML = data.map(d => {
-      const intensity = Math.min(Math.abs(d.percent) / 3, 1);
-      const bgColor = d.percent >= 0 ? `rgba(35, 134, 54, ${0.3 + intensity * 0.7})` : `rgba(218, 54, 51, ${0.3 + intensity * 0.7})`;
-      const displaySymbol = d.symbol.replace('BINANCE:', '').replace('USDT', '');
-      const percentText = (d.percent > 0 ? '+' : '') + d.percent.toFixed(2) + '%';
-      return `
-        <div class="heat-tile" style="background:${bgColor};" onclick="loadMainStock('${d.symbol}', '${d.symbol}', '${market}'); switchTab('dashboard', document.querySelector('.nav-tabs .tab-btn')); window.scrollTo(0,0);">
-          <div class="heat-symbol">${displaySymbol}</div>
-          <div>${percentText}</div>
-          <div class="heat-price">$${d.price ? d.price.toFixed(2) : '—'}</div>
-          <div class="tooltip-text">${displaySymbol} • ${percentText}<br>Цена: $${d.price ? d.price.toFixed(2) : '—'}</div>
-        </div>
-      `;
-    }).join('');
-  } catch (e) {
-    container.innerHTML = '<div style="color:var(--down); width:100%; text-align:center; padding:20px;">Ошибка загрузки</div>';
-  }
+function calcReturnPercent() {
+  const valuation = portfolioValuation();
+  return ((valuation.total - 10000) / 10000) * 100;
 }
 
-// Сделки и Ордера
+async function sellFromPortfolio(symbol) {
+  const market = findMarketForSymbol(symbol) || 'US';
+  switchTab('dashboard', document.querySelector('.nav-tabs .tab-btn'));
+  await loadMainStock(symbol, displaySymbol(symbol), market);
+  openTradeModal('sell');
+}
+
+/* ------------------------------------------------------------------ сделки */
+
 function openTradeModal(type) {
-  document.getElementById('tradeModal').style.display = 'block'; 
-  document.getElementById('tradeTitle').textContent = type === 'buy' ? `Купить ${currentMainSymbol.replace('BINANCE:', '').replace('USDT', '')}` : `Продать ${currentMainSymbol.replace('BINANCE:', '').replace('USDT', '')}`;
-  document.getElementById('tradePrice').textContent = allQuotes[currentMainSymbol]?.price?.toFixed(2) || '0.00'; 
-  document.getElementById('tradeShares').value = '';
-  document.getElementById('tradeSubmitBtn').onclick = () => executeTrade(type);
+  $('tradeModal').style.display = 'block';
+  $('tradeTitle').textContent = `${type === 'buy' ? 'Купить' : 'Продать'} ${displaySymbol(state.currentMainSymbol)}`;
+  const quote = state.quotes[state.currentMainSymbol];
+  $('tradePrice').textContent = quote ? fmtPrice(quote.price) : '0';
+  $('tradeShares').value = '';
+  $('tradeSubmitBtn').onclick = () => executeTrade(type);
 }
 
-function executeTrade(type) {
-  const shares = parseFloat(document.getElementById('tradeShares').value), price = allQuotes[currentMainSymbol]?.price;
-  if (!shares || shares <= 0 || !price) return alert('Ошибка ввода'); 
-  const totalCost = shares * price;
-  if (type === 'buy') {
-    if (localPortfolio.cash < totalCost) return alert('Мало денег!');
-    localPortfolio.cash -= totalCost;
-    if (!localPortfolio.holdings[currentMainSymbol]) localPortfolio.holdings[currentMainSymbol] = { shares: 0, totalCost: 0 };
-    localPortfolio.holdings[currentMainSymbol].shares += shares; 
-    localPortfolio.holdings[currentMainSymbol].totalCost += totalCost;
-    localPortfolio.history.push({ date: new Date().toISOString(), type: 'BUY', symbol: currentMainSymbol, shares, price, total: totalCost });
-  } else {
-    if (!localPortfolio.holdings[currentMainSymbol] || localPortfolio.holdings[currentMainSymbol].shares < shares) return alert('Мало акций!');
-    localPortfolio.cash += totalCost; 
-    localPortfolio.holdings[currentMainSymbol].shares -= shares;
-    localPortfolio.history.push({ date: new Date().toISOString(), type: 'SELL', symbol: currentMainSymbol, shares, price, total: totalCost });
-    if (localPortfolio.holdings[currentMainSymbol].shares === 0) delete localPortfolio.holdings[currentMainSymbol];
+async function executeTrade(type) {
+  if (!state.user) {
+    openModal('authModal');
+    return;
   }
-  localStorage.setItem('portfolio', JSON.stringify(localPortfolio)); 
-  closeModal('tradeModal'); 
-  fetchPortfolioQuotes(); 
-  updatePortfolioUI(); 
-  syncPortfolio();
+  const shares = Number.parseFloat($('tradeShares').value);
+  const quote = state.quotes[state.currentMainSymbol];
+  const price = quote && quote.price;
+
+  if (!Number.isFinite(shares) || shares <= 0) return alert('Укажите количество больше нуля');
+  if (!Number.isFinite(price) || price <= 0) return alert('Нет актуальной цены — обновите данные');
+
+  const symbol = state.currentMainSymbol;
+  const currency = quote.currency || 'USD';
+  const valueUsd = toUsd(shares * price, currency) ?? shares * price;
+  const total = shares * price;
+
+  if (type === 'buy') {
+    if (state.portfolio.cash < valueUsd) return alert('Недостаточно средств');
+    state.portfolio.cash -= valueUsd;
+    const position = state.portfolio.holdings[symbol] || { shares: 0, totalCost: 0 };
+    position.shares = Number(position.shares) + shares;
+    position.totalCost = Number(position.totalCost) + total;
+    state.portfolio.holdings[symbol] = position;
+  } else {
+    const position = state.portfolio.holdings[symbol];
+    if (!position || Number(position.shares) < shares) return alert('Недостаточно бумаг');
+    const costPerShare = Number(position.totalCost) / Number(position.shares);
+    position.totalCost = Math.max(0, Number(position.totalCost) - costPerShare * shares);
+    position.shares = Number(position.shares) - shares;
+    state.portfolio.cash += valueUsd;
+    if (position.shares <= 1e-9) delete state.portfolio.holdings[symbol];
+  }
+
+  state.portfolio.history.push({
+    date: new Date().toISOString(),
+    type: type.toUpperCase(),
+    symbol,
+    shares,
+    price,
+    total,
+    currency,
+  });
+
+  closeModal('tradeModal');
+  await fetchPortfolioQuotes();
+  updatePortfolioUI();
+  await syncPortfolio();
 }
+
+async function syncPortfolio() {
+  if (!state.user) return null;
+  try {
+    const response = await fetch('/api/portfolio', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ portfolio: state.portfolio, returnPercent: calcReturnPercent() }),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (_) {
+    return null;
+  }
+}
+
+/* --------------------------------------------------------------------- CSV */
+
+function downloadCsv(filename, rows) {
+  const escapeCell = (value) => {
+    const text = String(value ?? '');
+    return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const body = rows.map((row) => row.map(escapeCell).join(';')).join('\r\n');
+  const blob = new Blob([`\uFEFF${body}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function todayStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Экспорт позиций: раньше кнопка вызывала несуществующую функцию. */
+function exportCSV() {
+  const valuation = portfolioValuation();
+  const rows = [
+    ['Тикер', 'Название', 'Количество', 'Средняя цена', 'Текущая цена', 'Стоимость', 'P&L', 'Валюта', 'Стоимость в USD'],
+  ];
+
+  if (!valuation.rows.length) rows.push(['—', 'Портфель пуст', '', '', '', '', '', '', '']);
+
+  for (const row of valuation.rows) {
+    rows.push([
+      displaySymbol(row.symbol),
+      (state.markets[findMarketForSymbol(row.symbol)] || []).find((item) => item.symbol === row.symbol)?.name || '',
+      row.position.shares,
+      row.position.shares ? (row.cost / row.position.shares).toFixed(4) : '',
+      Number.isFinite(row.price) ? row.price.toFixed(4) : '',
+      row.value.toFixed(2),
+      row.pnl.toFixed(2),
+      row.currency,
+      Number.isFinite(row.valueUsd) ? row.valueUsd.toFixed(2) : '',
+    ]);
+  }
+
+  rows.push([]);
+  rows.push(['Кэш (USD)', state.portfolio.cash.toFixed(2)]);
+  rows.push(['Стоимость активов (USD)', valuation.stockUsd.toFixed(2)]);
+  rows.push(['Итого (USD)', valuation.total.toFixed(2)]);
+  rows.push(['Доходность (%)', calcReturnPercent().toFixed(2)]);
+  if (valuation.partial) rows.push(['Примечание', 'Часть позиций без курса валют — итог неполный']);
+
+  downloadCsv(`starstocks_portfolio_${todayStamp()}.csv`, rows);
+}
+
+function exportTradesCSV() {
+  const history = Array.isArray(state.portfolio.history) ? state.portfolio.history : [];
+  const rows = [['Дата', 'Тип', 'Тикер', 'Количество', 'Цена', 'Сумма', 'Валюта']];
+
+  if (!history.length) rows.push(['—', 'Сделок пока нет', '', '', '', '', '']);
+
+  for (const trade of history) {
+    rows.push([
+      new Date(trade.date).toISOString(),
+      trade.type,
+      displaySymbol(trade.symbol),
+      trade.shares,
+      Number(trade.price).toFixed(4),
+      Number(trade.total).toFixed(2),
+      trade.currency || '',
+    ]);
+  }
+
+  downloadCsv(`starstocks_trades_${todayStamp()}.csv`, rows);
+}
+
+/* ----------------------------------------------------------------- лимитки */
 
 function openLimitModal() {
-  document.getElementById('limitModal').style.display = 'block';
-  document.getElementById('limitSymbol').textContent = currentMainSymbol.replace('BINANCE:', '').replace('USDT', '');
-  document.getElementById('limitTargetPrice').value = allQuotes[currentMainSymbol]?.price?.toFixed(2) || '';
-  document.getElementById('limitShares').value = '';
+  if (!state.user) {
+    openModal('authModal');
+    return;
+  }
+  $('limitModal').style.display = 'block';
+  $('limitSymbol').textContent = displaySymbol(state.currentMainSymbol);
+  const quote = state.quotes[state.currentMainSymbol];
+  $('limitTargetPrice').value = quote ? quote.price.toFixed(2) : '';
+  $('limitShares').value = '';
 }
 
 async function submitLimitOrder() {
-  if (!currentUser) return alert('Войдите в аккаунт!');
-  const type = document.getElementById('limitType').value;
-  const target = parseFloat(document.getElementById('limitTargetPrice').value);
-  const shares = parseInt(document.getElementById('limitShares').value);
-  if (!target || !shares || shares <= 0) return alert('Заполните поля!');
-  await fetch('/api/orders', {
-    method: 'POST', 
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ email: currentUser.email, symbol: currentMainSymbol, type, target_price: target, shares, market: currentMainMarket })
-  });
-  closeModal('limitModal'); 
-  alert('Заявка создана!');
+  if (!state.user) return alert('Войдите в аккаунт');
+  const type = $('limitType').value;
+  const target = Number.parseFloat($('limitTargetPrice').value);
+  const shares = Number.parseInt($('limitShares').value, 10);
+
+  if (!Number.isFinite(target) || target <= 0) return alert('Укажите цену больше нуля');
+  if (!Number.isInteger(shares) || shares <= 0) return alert('Количество должно быть целым числом больше нуля');
+
+  try {
+    const response = await fetch('/api/orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol: state.currentMainSymbol,
+        market: state.currentMainMarket,
+        type,
+        target_price: target,
+        shares,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) return alert(data.error || 'Не удалось создать заявку');
+
+    closeModal('limitModal');
+    alert('Заявка создана');
+  } catch (_) {
+    alert('Сеть недоступна, попробуйте ещё раз');
+  }
 }
 
 async function loadOrders() {
-  if (!currentUser) return;
-  const orders = await fetch(`/api/orders/${currentUser.email}`).then(r => r.json());
+  if (!state.user) return;
   const tbody = document.querySelector('#ordersTable tbody');
-  if(orders.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Нет активных заявок</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center;">Загрузка…</td></tr>';
+
+  try {
+    const response = await fetch('/api/orders');
+    if (!response.ok) throw new Error('fail');
+    const orders = await response.json();
+
+    if (!orders.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="muted" style="text-align:center;">Нет заявок</td></tr>';
       return;
+    }
+
+    tbody.innerHTML = orders.map((order) => {
+      const statusText = order.status === 'PENDING' ? 'Ожидает' : order.status === 'FILLED' ? 'Исполнена' : 'Отменена';
+      const statusColor = order.status === 'PENDING' ? 'var(--warn)' : order.status === 'FILLED' ? 'var(--up)' : 'var(--down)';
+      const cancelBtn = order.status === 'PENDING'
+        ? `<button class="btn-small btn-sell" data-cancel="${esc(order.id)}">Отменить</button>`
+        : '—';
+
+      return `<tr>
+        <td>${new Date(order.created_at).toLocaleString('ru-RU')}</td>
+        <td><b>${esc(displaySymbol(order.symbol))}</b></td>
+        <td>${order.type === 'buy' ? 'Покупка' : 'Продажа'}</td>
+        <td>${order.shares}</td>
+        <td>${fmtPrice(order.target_price)}</td>
+        <td style="color:${statusColor};">${statusText}</td>
+        <td>${cancelBtn}</td>
+      </tr>`;
+    }).join('');
+  } catch (_) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="down" style="text-align:center;">Не удалось загрузить заявки</td></tr>';
   }
-  tbody.innerHTML = orders.map(o => {
-    const date = new Date(o.created_at).toLocaleString('ru-RU');
-    const statusText = o.status === 'PENDING' ? 'Ожидает' : (o.status === 'FILLED' ? 'Исполнена' : 'Отменена');
-    const statusColor = o.status === 'PENDING' ? '#e3b341' : (o.status === 'FILLED' ? 'var(--up)' : 'var(--down)');
-    const cancelBtn = o.status === 'PENDING' ? `<button class="btn-small btn-sell" onclick="cancelOrder(${o.id})">Отменить</button>` : '—';
-    return `<tr>
-      <td>${date}</td><td><b>${o.symbol.replace('BINANCE:', '').replace('USDT', '')}</b></td>
-      <td>${o.type === 'buy' ? 'Покупка' : 'Продажа'}</td><td>${o.shares}</td>
-      <td>$${o.target_price.toFixed(2)}</td><td style="color:${statusColor};">${statusText}</td><td>${cancelBtn}</td>
-    </tr>`;
-  }).join('');
 }
 
-async function cancelOrder(id) { 
-  await fetch(`/api/orders/${id}`, { method: 'DELETE' }); 
-  loadOrders(); 
+async function cancelOrder(id) {
+  try {
+    const response = await fetch(`/api/orders/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      alert(data.error || 'Не удалось отменить');
+    }
+  } catch (_) {
+    alert('Сеть недоступна');
+  }
+  loadOrders();
 }
 
-// Авторизация и Лидерборд
-function processAuth(data) {
-  currentUser = data; 
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
-  if (data.portfolio) localPortfolio = data.portfolio; 
-  else localPortfolio = { cash: 10000, holdings: {}, history: [] };
-  localStorage.setItem('portfolio', JSON.stringify(localPortfolio));
-  closeModal('authModal'); 
-  checkAuth(); 
-  updatePortfolioUI(); 
-  fetchPortfolioQuotes(); 
-  syncPortfolio();
+/* ================================================================== авторизация */
+
+async function processAuth(user) {
+  state.user = user;
+  state.portfolio = user.portfolio || { cash: 10000, holdings: {}, history: [] };
+  closeModal('authModal');
+  checkAuth();
+  await loadFxRates();
+  await fetchPortfolioQuotes();
+  updatePortfolioUI();
+  await syncPortfolio();
 }
 
-function register() {
-  const email = document.getElementById('authEmail').value.trim(), password = document.getElementById('authPassword').value.trim(), username = document.getElementById('authUsername').value.trim();
-  if (!email || !password || !username) return alert('Заполните все поля!');
-  fetch('/api/auth/register', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email, password, username }) })
-  .then(r => r.json()).then(data => { if (data.error) return alert(data.error); processAuth(data); });
+async function login() {
+  const email = $('authEmail').value.trim();
+  const password = $('authPassword').value.trim();
+  if (!email || !password) return alert('Введите email и пароль');
+
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await response.json();
+    if (!response.ok) return alert(data.error || 'Не удалось войти');
+    await processAuth(data.user);
+  } catch (_) {
+    alert('Сеть недоступна');
+  }
 }
 
-function login() {
-  const email = document.getElementById('authEmail').value.trim(), password = document.getElementById('authPassword').value.trim();
-  if (!email || !password) return alert('Введите Email и пароль!');
-  fetch('/api/auth/login', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ email, password }) })
-  .then(r => r.json()).then(data => { if (data.error) return alert(data.error); processAuth(data); });
+async function register() {
+  const email = $('authEmail').value.trim();
+  const password = $('authPassword').value.trim();
+  const username = $('authUsername').value.trim();
+  if (!email || !password || !username) return alert('Заполните все поля');
+
+  try {
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, username }),
+    });
+    const data = await response.json();
+    if (!response.ok) return alert(data.error || 'Не удалось зарегистрироваться');
+    await processAuth(data.user);
+  } catch (_) {
+    alert('Сеть недоступна');
+  }
 }
 
-function logout() { currentUser = null; localStorage.removeItem('currentUser'); checkAuth(); }
+async function logout() {
+  try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (_) { /* ignore */ }
+  state.user = null;
+  state.portfolio = { cash: 10000, holdings: {}, history: [] };
+  localStorage.removeItem('currentUser');
+  localStorage.removeItem('portfolio');
+  updatePortfolioUI();
+  checkAuth();
+}
 
 function checkAuth() {
-  if (currentUser) { 
-    document.getElementById('loginBtn').style.display = 'none'; 
-    document.getElementById('userInfo').style.display = 'block'; 
-    document.getElementById('displayUsername').textContent = currentUser.username; 
-  } else { 
-    document.getElementById('loginBtn').style.display = 'block'; 
-    document.getElementById('userInfo').style.display = 'none'; 
+  const loginBtn = $('loginBtn');
+  const userInfo = $('userInfo');
+  if (state.user) {
+    loginBtn.style.display = 'none';
+    userInfo.style.display = 'block';
+    $('displayUsername').textContent = state.user.username;
+  } else {
+    loginBtn.style.display = 'block';
+    userInfo.style.display = 'none';
   }
-}
-
-function syncPortfolio() { 
-  if (!currentUser) return; 
-  fetch('/api/update-portfolio', { 
-    method: 'POST', 
-    headers: {'Content-Type': 'application/json'}, 
-    body: JSON.stringify({ email: currentUser.email, portfolio: localPortfolio, returnPercent: calcReturnPercent() }) 
-  }); 
 }
 
 async function loadLeaderboard() {
-  const users = await fetch('/api/leaderboard').then(r => r.json()); 
   const tbody = document.querySelector('#leaderboardTable tbody');
-  if (!users || users.length === 0) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">Пусто</td></tr>'; return; }
-  tbody.innerHTML = users.map((u, i) => {
-    const isMe = currentUser && u.email === currentUser.email;
-    return `<tr style="${isMe ? 'background: rgba(88, 166, 255, 0.1);' : ''}">
-      <td>#${i+1}</td><td>${u.username} ${isMe ? '(Вы)' : ''}</td>
-      <td class="${u.return_percent >= 0 ? 'up' : 'down'}">${(u.return_percent || 0).toFixed(2)}%</td><td>${u.badges ? u.badges.join(' ') : '—'}</td>
-    </tr>`;
-  }).join('');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;">Загрузка…</td></tr>';
+
+  try {
+    const response = await fetch('/api/leaderboard');
+    const users = await response.json();
+    if (!Array.isArray(users) || !users.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;">Пока пусто</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = users.map((user, index) => {
+      const isMe = state.user && user.id === state.user.id;
+      const percent = Number(user.return_percent) || 0;
+      return `<tr style="${isMe ? 'background: rgba(88, 166, 255, 0.1);' : ''}">
+        <td>#${index + 1}</td>
+        <td>${esc(user.username)} ${isMe ? '(вы)' : ''}</td>
+        <td class="${percent >= 0 ? 'up' : 'down'}">${fmtPercent(percent)}</td>
+        <td>${(user.badges || []).map(esc).join(' ') || '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch (_) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="down" style="text-align:center;">Не удалось загрузить</td></tr>';
+  }
 }
 
-// Новости, Избранное, Профиль, Поиск
+/* ================================================== новости, избранное, профиль */
+
 async function loadNews() {
-  const container = document.getElementById('newsList'); 
-  container.innerHTML = 'Загрузка...';
+  const container = $('newsList');
+  if (!container) return;
+  container.innerHTML = '<div class="skeleton-item"><div class="skeleton-img"></div><div class="skeleton-text"><div class="skeleton-line"></div><div class="skeleton-line short"></div></div></div>';
+
   try {
-    const news = await fetch('/api/news').then(r => r.json());
-    container.innerHTML = news.map(n => `
-      <div class="news-item" style="display:flex; gap:10px; margin-bottom:10px; border-bottom:1px solid #30363d; padding-bottom:10px;">
-        ${n.image ? `<img src="${n.image}" style="width:60px; height:60px; border-radius:6px; object-fit:cover;">` : ''}
-        <div><a href="${n.url}" target="_blank" style="color:#c9d1d9; font-size:13px; text-decoration:none;">${n.headline}</a></div>
+    const response = await fetch('/api/news');
+    const news = await response.json();
+    if (!Array.isArray(news) || !news.length) {
+      container.innerHTML = '<p class="muted">Нет новостей</p>';
+      return;
+    }
+
+    container.innerHTML = news.map((item) => `
+      <div class="news-item">
+        ${item.image ? `<img src="${esc(item.image)}" alt="" loading="lazy">` : ''}
+        <a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.headline)}</a>
       </div>
     `).join('');
-  } catch(e) { container.innerHTML = 'Нет новостей'; }
+  } catch (_) {
+    container.innerHTML = '<p class="muted">Нет новостей</p>';
+  }
 }
 
 function toggleFavorite(symbol) {
-  if (favorites.includes(symbol)) { favorites = favorites.filter(f => f !== symbol); document.getElementById('mainStarBtn').classList.remove('active'); } 
-  else { favorites.push(symbol); document.getElementById('mainStarBtn').classList.add('active'); }
-  localStorage.setItem('favorites', JSON.stringify(favorites)); 
+  state.favorites = state.favorites.includes(symbol)
+    ? state.favorites.filter((item) => item !== symbol)
+    : [...state.favorites, symbol];
+
+  localStorage.setItem('favorites', JSON.stringify(state.favorites));
+  const starBtn = $('mainStarBtn');
+  if (starBtn) starBtn.classList.toggle('active', state.favorites.includes(symbol));
   renderFavorites();
 }
 
-async function renderFavorites() {
-  const container = document.getElementById('favoritesContainer'); 
-  if(!container) return;
-  container.innerHTML = favorites.length ? '' : '<p style="color:#8b949e">Пусто</p>';
-  favorites.forEach((sym, i) => { 
-    const market = findMarketForSymbol(sym);
-    const stock = allMarkets[market].find(s => s.symbol === sym); 
-    if (stock) createCard(stock, market, container, i); 
-  });
+function renderFavorites() {
+  const container = $('favoritesContainer');
+  if (!container) return;
+
+  if (!state.favorites.length) {
+    container.innerHTML = '<p class="muted" style="margin:0;">Пусто — нажмите ★ на карточке инструмента</p>';
+    return;
+  }
+
+  container.innerHTML = state.favorites.map((symbol) => {
+    const market = findMarketForSymbol(symbol);
+    const name = market
+      ? (state.markets[market] || []).find((item) => item.symbol === symbol)?.name || displaySymbol(symbol)
+      : displaySymbol(symbol);
+    const quote = state.quotes[symbol];
+    const percent = quote && Number.isFinite(quote.percent) ? quote.percent : null;
+
+    return `<div class="fav-row" data-favorite="${esc(symbol)}">
+      <div>
+        <div class="fav-symbol">${esc(displaySymbol(symbol))}</div>
+        <div class="fav-name">${esc(name)}</div>
+      </div>
+      <div class="fav-price">
+        <div>${quote ? fmtPrice(quote.price) : '—'}</div>
+        <div class="${percent === null ? 'muted' : percent >= 0 ? 'up' : 'down'}">${percent === null ? '' : fmtPercent(percent)}</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function openProfile() {
-  if (!currentUser) return;
-  document.getElementById('profUsername').textContent = currentUser.username; 
-  document.getElementById('profEmail').textContent = currentUser.email;
-  document.getElementById('profReturn').textContent = document.getElementById('portfolioPnL').textContent; 
-  document.getElementById('profReturn').className = document.getElementById('portfolioPnL').className;
-  document.getElementById('profCash').textContent = document.getElementById('cashBalance').textContent;
+  if (!state.user) return;
+  $('profUsername').textContent = state.user.username;
+  $('profEmail').textContent = state.user.email;
+  $('profReturn').textContent = $('portfolioPnL').textContent;
+  $('profReturn').className = $('portfolioPnL').className;
+  $('profCash').textContent = $('cashBalance').textContent;
   openModal('profileModal');
 }
 
-const searchInput = document.getElementById('symbolInput'), autoList = document.getElementById('autocompleteList');
-searchInput.addEventListener('input', function() {
-  const val = this.value.toUpperCase(); autoList.innerHTML = ''; if (!val) { autoList.style.display = 'none'; return; }
-  let allSymbols = [];
-  for (const [market, list] of Object.entries(allMarkets)) list.forEach(item => allSymbols.push({ ...item, market }));
-  const matches = allSymbols.filter(s => s.symbol.replace('BINANCE:', '').replace('USDT', '').includes(val) || s.name.toUpperCase().includes(val)).slice(0, 8);
-  matches.forEach(m => { 
-    const div = document.createElement('div'); 
-    const cleanSym = m.symbol.replace('BINANCE:', '').replace('USDT', '');
-    div.innerHTML = `<b>${cleanSym}</b> - ${m.name} <span style="color:#58a6ff; font-size:12px;">(${m.market})</span>`; 
-    div.onclick = () => { searchInput.value = cleanSym; autoList.style.display = 'none'; loadMainStock(m.symbol, m.name, m.market); }; 
-    autoList.appendChild(div); 
+/* ============================================================== поиск/модалки */
+
+function setupSearch() {
+  const input = $('symbolInput');
+  const list = $('autocompleteList');
+  if (!input || !list) return;
+
+  input.addEventListener('input', () => {
+    const query = input.value.trim().toUpperCase();
+    list.innerHTML = '';
+    if (!query) {
+      list.style.display = 'none';
+      return;
+    }
+
+    const matches = [];
+    for (const [market, items] of Object.entries(state.markets)) {
+      for (const item of items) {
+        if (displaySymbol(item.symbol).includes(query) || String(item.name).toUpperCase().includes(query)) {
+          matches.push({ ...item, market });
+        }
+      }
+    }
+
+    matches.slice(0, 8).forEach((match) => {
+      const row = document.createElement('div');
+      row.innerHTML = `<b>${esc(displaySymbol(match.symbol))}</b> — ${esc(match.name)} <span class="tag">${match.market}</span>`;
+      row.onclick = () => {
+        input.value = displaySymbol(match.symbol);
+        list.style.display = 'none';
+        loadMainStock(match.symbol, match.name, match.market);
+      };
+      list.appendChild(row);
+    });
+
+    list.style.display = matches.length ? 'block' : 'none';
   });
-  autoList.style.display = matches.length ? 'block' : 'none';
-});
-document.addEventListener('click', (e) => { if (e.target !== searchInput) autoList.style.display = 'none'; });
 
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-function openModal(id) { document.getElementById(id).style.display = 'block'; }
+  document.addEventListener('click', (event) => {
+    if (event.target !== input) list.style.display = 'none';
+  });
+}
 
-window.onload = async () => {
-  checkAuth(); 
-  allMarkets = await fetch('/api/watchlist').then(r=>r.json());
-  loadNews(); 
-  loadMainStock('AAPL', 'Apple Inc.', 'US'); 
-  await fetchPortfolioQuotes(); 
+function closeModal(id) { $(id).style.display = 'none'; }
+function openModal(id) { $(id).style.display = 'block'; }
+
+/* ================================================================= init */
+
+async function refreshSession() {
+  try {
+    const response = await fetch('/api/auth/me');
+    if (!response.ok) return null;
+    const data = await response.json();
+    state.user = data.user;
+    state.portfolio = data.user.portfolio || { cash: 10000, holdings: {}, history: [] };
+    return data.user;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function refreshVisibleQuotes() {
+  if (state.fetchingQuotes) return;
+  const symbols = new Set([state.currentMainSymbol]);
+  for (const stock of (state.markets[state.currentMarket] || []).slice(0, 12)) symbols.add(stock.symbol);
+  for (const symbol of Object.keys(state.portfolio.holdings)) symbols.add(symbol);
+
+  state.fetchingQuotes = true;
+  try {
+    await Promise.all([...symbols].map(async (symbol) => {
+      const market = findMarketForSymbol(symbol) || state.currentMarket;
+      try {
+        const response = await fetch(`/api/quote/${market}/${encodeURIComponent(symbol)}`);
+        if (response.ok) state.quotes[symbol] = await response.json();
+      } catch (_) { /* ignore */ }
+    }));
+  } finally {
+    state.fetchingQuotes = false;
+  }
+
   updatePortfolioUI();
-  if (currentUser) syncPortfolio();
-  
+  renderWatchlistPrices();
+}
+
+function renderWatchlistPrices() {
+  const stocks = (state.markets[state.currentMarket] || []).slice(0, 12);
+  for (const stock of stocks) {
+    const quote = state.quotes[stock.symbol];
+    if (!quote) continue;
+    const priceEl = $(`wl-price-${stock.symbol}`);
+    const changeEl = $(`wl-change-${stock.symbol}`);
+    if (priceEl) priceEl.textContent = fmtPrice(quote.price);
+    if (changeEl && Number.isFinite(quote.percent)) {
+      changeEl.textContent = fmtPercent(quote.percent);
+      changeEl.className = `wl-change ${quote.percent >= 0 ? 'up' : 'down'}`;
+    }
+  }
+}
+
+/* =============================================================== тепловая карта */
+
+async function loadHeatmap(market) {
+  const container = $('heatmapContainer');
+  const title = $('heatmapMarketName');
+  const names = { US: 'США', EU: 'Европа', RU: 'Россия', CRYPTO: 'Крипта', FOREX: 'Валюты' };
+  if (title) title.textContent = `(${names[market] || market})`;
+  if (!container) return;
+
+  container.innerHTML = '<div class="muted" style="width:100%; text-align:center; padding:20px;">Загрузка…</div>';
+
+  try {
+    const response = await fetch(`/api/heatmap/${market}`);
+    if (!response.ok) throw new Error('fail');
+    const data = await response.json();
+
+    if (!data.length) {
+      container.innerHTML = '<div class="muted" style="width:100%; text-align:center; padding:20px;">Нет данных</div>';
+      return;
+    }
+
+    container.innerHTML = data.map((tile) => {
+      const intensity = Math.min(Math.abs(tile.percent) / 3, 1);
+      const rgb = tile.percent >= 0 ? '35, 134, 54' : '218, 54, 51';
+      const symbol = currencySymbol(tile.currency);
+
+      return `
+        <div class="heat-tile" style="background: rgba(${rgb}, ${0.3 + intensity * 0.7});" data-symbol="${esc(tile.symbol)}">
+          <div class="heat-symbol">${esc(displaySymbol(tile.symbol))}</div>
+          <div>${fmtPercent(tile.percent)}</div>
+          <div class="heat-price">${symbol}${fmtPrice(tile.price)}</div>
+          <div class="tooltip-text">${esc(displaySymbol(tile.symbol))} · ${fmtPercent(tile.percent)}<br>${symbol}${fmtPrice(tile.price)}${tile.delayed ? '<br>задержка' : ''}</div>
+        </div>`;
+    }).join('');
+
+    container.querySelectorAll('.heat-tile').forEach((tile) => {
+      tile.addEventListener('click', () => {
+        const symbol = tile.dataset.symbol;
+        loadMainStock(symbol, displaySymbol(symbol), market);
+        switchTab('dashboard', document.querySelector('.nav-tabs .tab-btn'));
+        window.scrollTo(0, 0);
+      });
+    });
+  } catch (_) {
+    container.innerHTML = '<div class="down" style="width:100%; text-align:center; padding:20px;">Ошибка загрузки</div>';
+  }
+}
+
+/* ================================================================ делегирование */
+
+document.addEventListener('click', (event) => {
+  const favoriteRow = event.target.closest('[data-favorite]');
+  if (favoriteRow) {
+    const symbol = favoriteRow.dataset.favorite;
+    const market = findMarketForSymbol(symbol) || 'US';
+    loadMainStock(symbol, displaySymbol(symbol), market);
+    switchTab('dashboard', document.querySelector('.nav-tabs .tab-btn'));
+    return;
+  }
+
+  const sellButton = event.target.closest('[data-sell]');
+  if (sellButton) {
+    event.stopPropagation();
+    sellFromPortfolio(sellButton.dataset.sell);
+    return;
+  }
+  const cancelButton = event.target.closest('[data-cancel]');
+  if (cancelButton) {
+    event.stopPropagation();
+    cancelOrder(cancelButton.dataset.cancel);
+  }
+});
+
+/* ================================================================== запуск */
+
+async function init() {
+  connectWs();
+  setupSearch();
+  updatePortfolioUI();
+
+  await refreshSession();
+  checkAuth();
+  if (state.user) await loadFxRates();
+
+  state.markets = await fetch('/api/watchlist').then((r) => r.json());
+  loadNews();
+  await loadMainStock('AAPL', 'Apple Inc.', 'US');
+  await fetchPortfolioQuotes();
+  updatePortfolioUI();
+  renderFavorites();
+
   switchMarket('US', document.querySelector('.market-btn'));
-  setInterval(fetchPortfolioQuotes, 30000); // Автообновление портфеля для не-US рынков
-};
+  setInterval(refreshVisibleQuotes, 30_000);
+}
+
+window.addEventListener('load', () => {
+  init().catch((error) => console.error('Ошибка инициализации', error));
+});
