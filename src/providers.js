@@ -21,6 +21,51 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
+/**
+ * Последнее состояние каждого источника. Нужно для /api/diagnostics:
+ * без этого «нет данных» одинаково выглядит и при блокировке источника,
+ * и при отсутствии символа, и при сетевой ошибке.
+ */
+const providerStatus = {};
+
+function mark(name, ok, detail) {
+  providerStatus[name] = {
+    ok,
+    detail: detail ? String(detail).slice(0, 200) : null,
+    at: new Date().toISOString(),
+  };
+}
+
+function getProviderStatus() {
+  return { ...providerStatus };
+}
+
+const YAHOO_HOSTS = ['https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'];
+
+/**
+ * Yahoo — единственный источник, который отдаёт и котировки EU, и дневные свечи.
+ * Запрос идёт в два хоста подряд: query1 иногда отвечает 429 с дата-центровых IP.
+ */
+async function yahooChart(symbol, params, timeout = 12_000) {
+  let lastError = 'unknown';
+  for (const host of YAHOO_HOSTS) {
+    try {
+      const data = await getJson(`${host}/v8/finance/chart/${encodeURIComponent(symbol)}`, { params, timeout });
+      const result = data && data.chart && data.chart.result && data.chart.result[0];
+      if (result) {
+        mark('yahoo', true);
+        return result;
+      }
+      lastError = (data && data.chart && data.chart.error && data.chart.error.description) || 'empty result';
+    } catch (err) {
+      lastError = (err && err.message) || String(err);
+    }
+  }
+  mark('yahoo', false, lastError);
+  log.warn('providers', `Yahoo не ответил по ${symbol}`, lastError);
+  return null;
+}
+
 function moexTimeToIso(value) {
   if (!value || typeof value !== 'string') return null;
   // ISS отдаёт московское время без зоны: "2026-11-24 23:50:41"
@@ -43,7 +88,11 @@ async function fetchUsQuote(symbol) {
   });
   const price = num(data && data.c);
   // Finnhub на неизвестный тикер отвечает 200 и нулями — это не «цена 0», а «нет данных»
-  if (!price || price <= 0) return null;
+  if (!price || price <= 0) {
+    mark('finnhub', false, `пустой ответ по ${symbol}`);
+    return null;
+  }
+  mark('finnhub', true);
   return {
     symbol,
     market: 'US',
@@ -58,14 +107,11 @@ async function fetchUsQuote(symbol) {
 }
 
 async function fetchEuQuote(symbol) {
-  const data = await getJson(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`,
-    // range=1d обязателен: при 5d/1mo chartPreviousClose — это закрытие ПЕРЕД началом
-    // окна, и процент изменения получался неверным (SAP.DE: -5.6% вместо +2.0%).
-    { params: { range: '1d', interval: '1d' } },
-  );
-  const result = data && data.chart && data.chart.result && data.chart.result[0];
+  // range=1d обязателен: при 5d/1mo chartPreviousClose — это закрытие ПЕРЕД началом
+  // окна, и процент изменения получался неверным (SAP.DE: -5.6% вместо +2.0%).
+  const result = await yahooChart(symbol, { range: '1d', interval: '1d' });
   if (!result) return null;
+
   const meta = result.meta || {};
   const price = num(meta.regularMarketPrice);
   if (!price || price <= 0) return null;
@@ -97,7 +143,10 @@ async function fetchRuQuote(symbol) {
 
   const cols = data && data.marketdata && data.marketdata.columns;
   const row = data && data.marketdata && data.marketdata.data && data.marketdata.data[0];
-  if (!cols || !row) return null;
+  if (!cols || !row) {
+    mark('moex', false, `нет строки marketdata по ${symbol}`);
+    return null;
+  }
 
   const value = (name) => {
     const index = cols.indexOf(name);
@@ -138,6 +187,7 @@ async function fetchCryptoQuote(symbol) {
   const price = num(data && data.lastPrice);
   if (!price || price <= 0) return null;
 
+  mark('binance', true);
   return {
     symbol,
     market: 'CRYPTO',
@@ -154,9 +204,15 @@ async function fetchCryptoQuote(symbol) {
 
 async function frankfurterRate(base, quote, date) {
   const path = date ? `https://api.frankfurter.app/${date}` : 'https://api.frankfurter.app/latest';
-  const data = await getJson(path, { params: { from: base, to: quote } });
-  const rate = num(data && data.rates && data.rates[quote]);
-  return rate && rate > 0 ? { rate, date: data.date } : null;
+  try {
+    const data = await getJson(path, { params: { from: base, to: quote } });
+    const rate = num(data && data.rates && data.rates[quote]);
+    mark('frankfurter', !!(rate && rate > 0), rate ? null : `нет курса ${base}/${quote}`);
+    return rate && rate > 0 ? { rate, date: data.date } : null;
+  } catch (err) {
+    mark('frankfurter', false, err && err.message);
+    throw err;
+  }
 }
 
 async function fetchFxQuote(symbol) {
@@ -264,12 +320,7 @@ async function fetchYahooCandles(symbol, days, market) {
   if (market === 'CRYPTO') yahooSymbol = symbol.replace(/^BINANCE:/, '').replace(/USDT$/, '-USD');
   if (market === 'FOREX') yahooSymbol = `${symbol}=X`;
 
-  const data = await getJson(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}`,
-    { params: { range: yahooRangeForDays(days), interval: '1d' } },
-  );
-
-  const result = data && data.chart && data.chart.result && data.chart.result[0];
+  const result = await yahooChart(yahooSymbol, { range: yahooRangeForDays(days), interval: '1d' });
   if (!result || !Array.isArray(result.timestamp)) return [];
 
   const quote = result.indicators && result.indicators.quote && result.indicators.quote[0];
@@ -288,12 +339,30 @@ async function fetchYahooCandles(symbol, days, market) {
 }
 
 async function getCandles(symbol, market, days = 365) {
+  const providers = { RU: 'moex', CRYPTO: 'binance', US: 'yahoo', EU: 'yahoo', FOREX: 'yahoo' };
   return getOrLoad(`candles:${market}:${symbol}:${days}`, TTL.candles, async () => {
     let candles = [];
-    if (market === 'RU') candles = await fetchRuCandles(symbol, days);
-    else if (market === 'CRYPTO') candles = await fetchCryptoCandles(symbol, days);
-    else candles = await fetchYahooCandles(symbol, days, market);
-    return { candles, fetchedAt: new Date().toISOString() };
+    try {
+      if (market === 'RU') {
+        candles = await fetchRuCandles(symbol, days);
+        mark('moex', candles.length > 0, candles.length ? null : 'пустой ответ');
+      } else if (market === 'CRYPTO') {
+        candles = await fetchCryptoCandles(symbol, days);
+        mark('binance', candles.length > 0, candles.length ? null : 'пустой ответ');
+      } else {
+        candles = await fetchYahooCandles(symbol, days, market);
+      }
+    } catch (err) {
+      mark(providers[market] || 'unknown', false, err && err.message);
+      return { candles: [], provider: providers[market] || 'unknown', error: String((err && err.message) || err), fetchedAt: new Date().toISOString() };
+    }
+
+    return {
+      candles,
+      provider: providers[market] || 'unknown',
+      error: candles.length ? null : 'источник не вернул свечи',
+      fetchedAt: new Date().toISOString(),
+    };
   });
 }
 
@@ -479,4 +548,12 @@ async function getNews() {
   });
 }
 
-module.exports = { getQuote, getCandles, getFundamentals, getFxRate, getNews, TTL };
+module.exports = {
+  getQuote,
+  getCandles,
+  getFundamentals,
+  getFxRate,
+  getNews,
+  getProviderStatus,
+  TTL,
+};

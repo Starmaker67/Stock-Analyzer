@@ -42,15 +42,30 @@ function agentFor(url) {
   return defaultAgent;
 }
 
-const USER_AGENT = 'StarStocks/1.0 (+https://starstocks.onrender.com)';
+const USER_AGENT = 'StarStocks/1.0 (+https://stock-analyzer.onrender.com)';
+// Yahoo отдаёт 429/пустоту не-браузерным клиентам с дата-центровых IP,
+// поэтому для него представляемся обычным браузером.
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+const BROWSER_HOSTS = /(^|\.)finance\.yahoo\.com$|(^|\.)yahoo\.com$/i;
+
+function userAgentFor(url) {
+  try {
+    return BROWSER_HOSTS.test(new URL(url).hostname) ? BROWSER_UA : USER_AGENT;
+  } catch (_) {
+    return USER_AGENT;
+  }
+}
 
 async function getJson(url, options = {}) {
   const response = await axios.get(url, {
     timeout: options.timeout ?? 12_000,
     httpsAgent: agentFor(url),
     headers: {
-      'User-Agent': USER_AGENT,
+      'User-Agent': userAgentFor(url),
       Accept: 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
       ...(options.headers || {}),
     },
     // не даём axios бросать на 4xx — решение принимает провайдер

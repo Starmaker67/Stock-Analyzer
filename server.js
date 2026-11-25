@@ -11,7 +11,8 @@ const { getOrLoad, stats: cacheStats } = require('./src/cache');
 const auth = require('./src/auth');
 const validate = require('./src/validate');
 const { MARKETS, MARKET_META, companyName, marketOf, isKnown } = require('./src/markets');
-const { getQuote, getCandles, getFundamentals, getFxRate, getNews } = require('./src/providers');
+const { getQuote, getCandles, getFundamentals, getFxRate, getNews, getProviderStatus } = require('./src/providers');
+const { getJson } = require('./src/http');
 const { computeIndicators, buildRadar } = require('./src/indicators');
 
 const app = express();
@@ -48,8 +49,85 @@ app.get('/api/health', asyncRoute(async (req, res) => {
   });
 }));
 
-app.get('/api/watchlist', (req, res) => {
-  const payload = {};
+/**
+ * Диагностика источников: одна страница, по которой видно, что именно сломано —
+ * сеть, тариф источника или конкретный символ. Без неё «нет данных» неотличимо
+ * от «источник заблокирован».
+ */
+app.get('/api/diagnostics', asyncRoute(async (req, res) => {
+  const withTimeout = (promise, ms = 15_000) =>
+    Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`таймаут ${ms} мс`)), ms)),
+    ]);
+
+  const checks = {
+    database: async () => {
+      const result = await ping();
+      if (!result.ok) throw new Error(result.error || 'нет соединения');
+      return { ok: true };
+    },
+    finnhub: async () => {
+      const data = await getJson('https://finnhub.io/api/v1/quote', {
+        params: { symbol: 'AAPL', token: config.FINNHUB_KEY },
+      });
+      if (!data || !data.c) throw new Error('пустой ответ');
+      return { price: data.c };
+    },
+    yahoo: async () => {
+      const data = await getJson('https://query1.finance.yahoo.com/v8/finance/chart/AAPL', {
+        params: { range: '5d', interval: '1d' },
+      });
+      const price = data && data.chart && data.chart.result && data.chart.result[0]
+        && data.chart.result[0].meta && data.chart.result[0].meta.regularMarketPrice;
+      if (!price) throw new Error('нет цены в ответе');
+      return { price };
+    },
+    binance: async () => {
+      const data = await getJson('https://api.binance.com/api/v3/ticker/24hr', { params: { symbol: 'BTCUSDT' } });
+      if (!data || !data.lastPrice) throw new Error('пустой ответ');
+      return { price: Number(data.lastPrice) };
+    },
+    frankfurter: async () => {
+      const data = await getJson('https://api.frankfurter.app/latest', { params: { from: 'USD', to: 'EUR' } });
+      const rate = data && data.rates && data.rates.EUR;
+      if (!rate) throw new Error('нет курса');
+      return { rate };
+    },
+    moex: async () => {
+      const data = await getJson(
+        'https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/SBER.json',
+        { params: { 'iss.meta': 'off' } },
+      );
+      const row = data && data.marketdata && data.marketdata.data && data.marketdata.data[0];
+      if (!row) throw new Error('нет строки marketdata');
+      return { ok: true };
+    },
+  };
+
+  const results = {};
+  await Promise.all(Object.entries(checks).map(async ([name, check]) => {
+    const started = Date.now();
+    try {
+      const detail = await withTimeout(check());
+      results[name] = { ok: true, ms: Date.now() - started, ...detail };
+    } catch (err) {
+      results[name] = { ok: false, ms: Date.now() - started, error: String((err && err.message) || err) };
+    }
+  }));
+
+  res.json({
+    node: process.version,
+    version: config.VERSION,
+    uptime: Math.round(process.uptime()),
+    hasMoexCa: require('./src/http').hasExtraCa,
+    checks: results,
+    providers: getProviderStatus(),
+    cache: cacheStats(),
+  });
+}));
+
+app.get('/api/watchlist', (req, res) => {  const payload = {};
   for (const [market, symbols] of Object.entries(MARKETS)) {
     payload[market] = symbols.map((symbol) => ({
       symbol,
@@ -81,11 +159,20 @@ app.get('/api/candles/:market/:symbol', asyncRoute(async (req, res) => {
   const market = validate.market(req.params.market);
   const symbol = validate.symbol(req.params.symbol);
   if (!market || !symbol) return res.status(400).json({ error: 'Некорректный запрос' });
+  if (!isKnown(symbol)) return res.status(404).json({ error: 'Инструмент не торгуется на платформе', symbol });
 
   const days = Math.min(Math.max(Number(req.query.days) || 365, 5), 2500);
   const data = await getCandles(symbol, market, days);
+
   if (!data || !data.candles.length) {
-    return res.status(404).json({ error: 'Свечи недоступны', symbol, market });
+    // 502, а не 404: символ существует, но источник не отдал данные.
+    return res.status(502).json({
+      error: 'Источник свечей недоступен',
+      reason: (data && data.error) || 'unknown',
+      provider: data && data.provider,
+      symbol,
+      market,
+    });
   }
 
   res.json({
@@ -94,6 +181,7 @@ app.get('/api/candles/:market/:symbol', asyncRoute(async (req, res) => {
     currency: MARKET_META[market].currency,
     delayed: !!MARKET_META[market].delayed,
     asOf: data.fetchedAt,
+    provider: data.provider,
     candles: data.candles,
     indicators: computeIndicators(data.candles),
   });
@@ -106,11 +194,21 @@ app.get('/api/tech-radar/:market/:symbol', asyncRoute(async (req, res) => {
 
   const data = await getCandles(symbol, market, 365);
   if (!data || !data.candles.length) {
-    return res.json({ score: 0, verdict: 'Нет данных', buy: 0, sell: 0, neutral: 0, groups: {}, values: {} });
+    return res.json({
+      score: 0,
+      verdict: 'Нет данных',
+      buy: 0,
+      sell: 0,
+      neutral: 0,
+      groups: {},
+      values: {},
+      reason: (data && data.error) || 'источник не вернул свечи',
+      provider: data && data.provider,
+    });
   }
 
   const indicators = computeIndicators(data.candles);
-  res.json({ ...buildRadar(indicators), asOf: data.fetchedAt });
+  res.json({ ...buildRadar(indicators), asOf: data.fetchedAt, provider: data.provider });
 }));
 
 app.get('/api/fundamentals/:market/:symbol', asyncRoute(async (req, res) => {

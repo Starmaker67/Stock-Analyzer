@@ -322,10 +322,13 @@ async function loadTechnical(symbol, market) {
 
   try {
     const response = await fetch(`/api/candles/${market}/${encodeURIComponent(symbol)}?days=365`);
-    if (!response.ok) throw new Error('Нет свечей');
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.reason || payload.error || `HTTP ${response.status}`);
+    }
     const data = await response.json();
     const indicators = data.indicators;
-    if (!indicators) throw new Error('Нет индикаторов');
+    if (!indicators) throw new Error('нет индикаторов');
 
     const row = (label, key, value, suffix = '') => {
       const display = Number.isFinite(value) ? `${value.toFixed(2)}${suffix}` : '—';
@@ -362,17 +365,27 @@ async function loadMainChart() {
     mainChart = null;
   }
 
+  // CanvasJS.StockChart ждёт id контейнера строкой. Раньше сюда передавался
+  // DOM-элемент — график молча не создавался.
+  if (typeof CanvasJS === 'undefined' || typeof CanvasJS.StockChart !== 'function') {
+    container.innerHTML = '<div class="muted" style="text-align:center; padding:20px;">Библиотека графиков не загрузилась (CanvasJS). Проверьте блокировщик рекламы и обновите страницу.</div>';
+    return;
+  }
+
   try {
     const response = await fetch(`/api/candles/${targetMarket}/${encodeURIComponent(targetSymbol)}?days=365`);
-    if (!response.ok) throw new Error('Нет свечей');
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.reason || payload.error || `HTTP ${response.status}`);
+    }
     const data = await response.json();
     if (targetSymbol !== state.currentMainSymbol) return;
-    if (!data.candles || !data.candles.length) throw new Error('Пусто');
+    if (!data.candles || !data.candles.length) throw new Error('нет свечей');
 
     container.innerHTML = '';
     const points = data.candles.map((candle) => ({ x: new Date(candle.x), y: [candle.o, candle.h, candle.l, candle.c] }));
 
-    mainChart = new CanvasJS.StockChart(container, {
+    mainChart = new CanvasJS.StockChart('mainChart', {
       theme: 'dark2',
       backgroundColor: 'transparent',
       animationEnabled: false,
@@ -387,9 +400,9 @@ async function loadMainChart() {
       navigator: { enabled: true },
     });
     mainChart.render();
-  } catch (_) {
+  } catch (error) {
     if (targetSymbol === state.currentMainSymbol) {
-      container.innerHTML = '<div class="muted" style="text-align:center; padding:20px;">График недоступен</div>';
+      container.innerHTML = `<div class="muted" style="text-align:center; padding:20px;">График недоступен: ${esc(error.message)}</div>`;
     }
   }
 }
@@ -408,7 +421,9 @@ async function loadTechRadar(symbol, market) {
     renderGauge(radar.score);
     const detail = $('radarDetail');
     if (detail) {
-      if (radar.buy + radar.sell + radar.neutral === 0) {
+      if (radar.reason) {
+        detail.textContent = `Нет данных: ${radar.reason}`;
+      } else if (radar.buy + radar.sell + radar.neutral === 0) {
         detail.textContent = 'Недостаточно данных для сигналов';
       } else {
         detail.innerHTML = `Покупать: <b class="up">${radar.buy}</b> · Нейтрально: <b>${radar.neutral}</b> · Продавать: <b class="down">${radar.sell}</b>`;
@@ -425,13 +440,14 @@ function renderGauge(score) {
   if (!container) return;
   const clamped = Math.max(-1, Math.min(1, Number(score) || 0));
   const angle = -90 + (clamped + 1) * 90; // -90° … +90°
-  const color = clamped > 0.17 ? 'var(--up)' : clamped < -0.17 ? 'var(--down)' : 'var(--muted)';
+  const color = clamped > 0.17 ? '#3fb950' : clamped < -0.17 ? '#f85149' : '#8b949e';
 
   container.innerHTML = `
     <div class="gauge">
       <svg viewBox="0 0 200 110" role="img" aria-label="Сигнал радара">
-        <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="#da3633" stroke-width="14" stroke-linecap="round" opacity="0.35"/>
-        <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="url(#gaugeGrad)" stroke-width="14" stroke-linecap="round" opacity="0.15"/>
+        <path d="M20 100 A80 80 0 0 1 60 30.7" fill="none" stroke="#f85149" stroke-width="14" stroke-linecap="round" opacity="0.45"/>
+        <path d="M60 30.7 A80 80 0 0 1 140 30.7" fill="none" stroke="#8b949e" stroke-width="14" stroke-linecap="round" opacity="0.35"/>
+        <path d="M140 30.7 A80 80 0 0 1 180 100" fill="none" stroke="#3fb950" stroke-width="14" stroke-linecap="round" opacity="0.45"/>
         <g transform="rotate(${angle} 100 100)">
           <line x1="100" y1="100" x2="100" y2="34" stroke="${color}" stroke-width="4" stroke-linecap="round"/>
         </g>
